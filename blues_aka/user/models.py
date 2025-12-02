@@ -1,6 +1,6 @@
 from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import CITEXT
-
+from werkzeug.security import generate_password_hash, check_password_hash
 from blues_aka.extensions import db
 
 class User(db.Model):
@@ -71,6 +71,12 @@ class User(db.Model):
     last_login_at = db.Column(
         db.DateTime(timezone=True)
     )
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
     # 设置 updated_at 触发器
     @staticmethod
