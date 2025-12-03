@@ -1467,4 +1467,1589 @@ def health_check():
 - **错误处理机制**：完善的错误处理和日志记录
 - **性能优化**：数据库索引、查询优化、缓存策略
 
+## 🗄️ 数据库配置与迁移
+
+### 1. 数据库配置
+
+```python
+# config.py
+import os
+from datetime import timedelta
+
+class Config:
+    """基础配置类"""
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-secret-key-here'
+
+    # 数据库配置
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        'postgresql://user:password@localhost/blues_aka'
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # JWT配置
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or 'jwt-secret-string'
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=15)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=7)
+    JWT_TOKEN_LOCATION = ['headers']
+
+    # Redis配置
+    REDIS_URL = os.environ.get('REDIS_URL') or 'redis://localhost:6379/0'
+
+    # 邮件配置
+    MAIL_SERVER = os.environ.get('MAIL_SERVER') or 'smtp.gmail.com'
+    MAIL_PORT = int(os.environ.get('MAIL_PORT') or 587)
+    MAIL_USE_TLS = os.environ.get('MAIL_USE_TLS', 'true').lower() in ['true', 'on', '1']
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER')
+
+    # 文件上传配置
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
+    UPLOAD_FOLDER = 'uploads'
+    ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+
+    # 安全配置
+    WTF_CSRF_ENABLED = True
+    WTF_CSRF_TIME_LIMIT = 3600
+
+    # 限流配置
+    RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL') or 'redis://localhost:6379/1'
+
+    @staticmethod
+    def init_app(app):
+        pass
+
+class DevelopmentConfig(Config):
+    """开发环境配置"""
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL') or \
+        'postgresql://dev:dev@localhost/blues_aka_dev'
+
+    @classmethod
+    def init_app(cls, app):
+        Config.init_app(app)
+
+        # 开发环境日志配置
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
+
+class TestingConfig(Config):
+    """测试环境配置"""
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = os.environ.get('TEST_DATABASE_URL') or \
+        'postgresql://test:test@localhost/blues_aka_test'
+    WTF_CSRF_ENABLED = False
+
+    @classmethod
+    def init_app(cls, app):
+        Config.init_app(app)
+
+class ProductionConfig(Config):
+    """生产环境配置"""
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+        'postgresql://user:password@localhost/blues_aka'
+
+    @classmethod
+    def init_app(cls, app):
+        Config.init_app(app)
+
+        # 生产环境日志配置
+        import logging
+        from logging.handlers import RotatingFileHandler
+
+        if not app.debug:
+            if not os.path.exists('logs'):
+                os.mkdir('logs')
+
+            file_handler = RotatingFileHandler(
+                'logs/blues_aka.log',
+                maxBytes=10240000,
+                backupCount=10
+            )
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+            ))
+            file_handler.setLevel(logging.INFO)
+            app.logger.addHandler(file_handler)
+
+            app.logger.setLevel(logging.INFO)
+            app.logger.info('Blues AKA production startup')
+
+# 配置字典
+config = {
+    'development': DevelopmentConfig,
+    'testing': TestingConfig,
+    'production': ProductionConfig,
+    'default': DevelopmentConfig
+}
+```
+
+### 2. 数据库迁移脚本
+
+```python
+# migrations/env.py
+from logging.config import fileConfig
+from sqlalchemy import engine_from_config
+from sqlalchemy import pool
+from alembic import context
+import os
+import sys
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from app import create_app
+from models import db
+from models import User  # 导入所有模型
+
+# 获取Alembic配置对象
+config = context.config
+
+# 设置数据库URL
+app = create_app(os.getenv('FLASK_CONFIG', 'default'))
+config.set_main_option('sqlalchemy.url', app.config['SQLALCHEMY_DATABASE_URI'])
+
+# 解释配置文件的日志记录
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+# 添加模型的MetaData对象以支持'autogenerate'
+target_metadata = db.metadata
+
+def run_migrations_offline() -> None:
+    """在'离线'模式下运行迁移"""
+    url = config.get_main_option("sqlalchemy.url")
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+def run_migrations_online() -> None:
+    """在'在线'模式下运行迁移"""
+
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section),
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
+```
+
+```bash
+#!/bin/bash
+# migrate.sh - 数据库迁移脚本
+
+echo "开始数据库迁移..."
+
+# 检查是否存在虚拟环境
+if [ ! -d "venv" ]; then
+    echo "错误: 虚拟环境不存在，请先创建虚拟环境"
+    exit 1
+fi
+
+# 激活虚拟环境
+source venv/bin/activate
+
+# 设置环境变量
+export FLASK_APP=app.py
+export FLASK_ENV=production
+
+# 创建迁移仓库（如果不存在）
+if [ ! -d "migrations" ]; then
+    echo "创建迁移仓库..."
+    flask db init
+fi
+
+# 生成迁移文件
+echo "生成迁移文件..."
+flask db migrate -m "Initial migration"
+
+# 执行迁移
+echo "执行数据库迁移..."
+flask db upgrade
+
+echo "数据库迁移完成！"
+
+# 可选：创建初始管理员用户
+echo "是否创建初始管理员用户？(y/n)"
+read -r response
+if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
+    python scripts/create_admin.py
+fi
+```
+
+### 3. 数据库种子数据
+
+```python
+# scripts/create_admin.py
+import os
+import sys
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from app import create_app, db
+from models import User
+
+def create_admin_user():
+    """创建管理员用户"""
+    app = create_app(os.getenv('FLASK_CONFIG', 'default'))
+
+    with app.app_context():
+        # 检查是否已存在管理员用户
+        admin = User.query.filter_by(email='admin@example.com').first()
+        if admin:
+            print("管理员用户已存在")
+            return
+
+        # 创建管理员用户
+        admin = User(
+            username='admin',
+            email='admin@example.com',
+            nickname='系统管理员',
+            is_admin=True,
+            is_verified=True,
+            status='active'
+        )
+
+        # 设置密码
+        admin.set_password('Admin123!@#')
+
+        db.session.add(admin)
+        db.session.commit()
+
+        print(f"管理员用户创建成功:")
+        print(f"  用户名: {admin.username}")
+        print(f"  邮箱: {admin.email}")
+        print(f"  ID: {admin.id}")
+
+if __name__ == '__main__':
+    create_admin_user()
+```
+
+```python
+# scripts/seed_data.py
+import os
+import sys
+import random
+from datetime import datetime, timedelta
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from app import create_app, db
+from models import User
+
+def create_test_users():
+    """创建测试用户数据"""
+    app = create_app(os.getenv('FLASK_CONFIG', 'default'))
+
+    test_users = [
+        {
+            'username': 'john_doe',
+            'email': 'john@example.com',
+            'nickname': 'John Doe',
+            'password': 'User123!@#'
+        },
+        {
+            'username': 'jane_smith',
+            'email': 'jane@example.com',
+            'nickname': 'Jane Smith',
+            'password': 'User123!@#'
+        },
+        {
+            'username': 'bob_wilson',
+            'email': 'bob@example.com',
+            'nickname': 'Bob Wilson',
+            'password': 'User123!@#'
+        }
+    ]
+
+    with app.app_context():
+        for user_data in test_users:
+            # 检查用户是否已存在
+            existing_user = User.query.filter_by(email=user_data['email']).first()
+            if existing_user:
+                print(f"用户 {user_data['email']} 已存在，跳过")
+                continue
+
+            # 创建用户
+            user = User(
+                username=user_data['username'],
+                email=user_data['email'],
+                nickname=user_data['nickname'],
+                is_verified=True,
+                status='active',
+                created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
+                last_login_at=datetime.utcnow() - timedelta(hours=random.randint(1, 24))
+            )
+
+            user.set_password(user_data['password'])
+            user.login_count = random.randint(1, 50)
+
+            # 设置用户扩展信息
+            user.profile = {
+                'bio': f'{user_data["nickname"]} is a software developer',
+                'location': 'San Francisco, CA',
+                'website': f'https://{user_data["username"]}.com',
+                'birthday': '1990-01-01'
+            }
+
+            db.session.add(user)
+            print(f"创建用户: {user_data['email']}")
+
+        db.session.commit()
+        print("测试用户数据创建完成")
+
+if __name__ == '__main__':
+    create_test_users()
+```
+
+---
+
+## 📧 邮件服务实现
+
+### 1. 邮件服务配置
+
+```python
+# services/email_service.py
+import os
+import secrets
+from flask import current_app, render_template
+from flask_mail import Mail, Message
+from threading import Thread
+import logging
+
+class EmailService:
+    """邮件服务类"""
+
+    def __init__(self, app=None):
+        self.mail = None
+        self.app = app
+        if app is not None:
+            self.init_app(app)
+
+    def init_app(self, app):
+        """初始化邮件服务"""
+        self.app = app
+        self.mail = Mail(app)
+
+    def send_async_email(self, app, msg):
+        """异步发送邮件"""
+        with app.app_context():
+            try:
+                self.mail.send(msg)
+                logging.info(f"邮件发送成功: {msg.subject}")
+            except Exception as e:
+                logging.error(f"邮件发送失败: {str(e)}")
+
+    def send_email(self, subject, recipients, html_body, text_body=None):
+        """发送邮件"""
+        msg = Message(
+            subject=subject,
+            sender=current_app.config['MAIL_DEFAULT_SENDER'],
+            recipients=recipients
+        )
+
+        msg.html = html_body
+        if text_body:
+            msg.body = text_body
+
+        # 异步发送邮件
+        Thread(
+            target=self.send_async_email,
+            args=(current_app._get_current_object(), msg)
+        ).start()
+
+    def send_verification_email(self, user_email, verification_token, username):
+        """发送邮箱验证邮件"""
+        verification_url = f"{current_app.config.get('FRONTEND_URL', 'http://localhost:3000')}/verify-email?token={verification_token}"
+
+        subject = "验证您的邮箱地址"
+
+        html_body = render_template(
+            'emails/verification.html',
+            username=username,
+            verification_url=verification_url,
+            support_email=current_app.config.get('SUPPORT_EMAIL', 'support@example.com')
+        )
+
+        text_body = f"""
+        您好 {username}，
+
+        请点击以下链接验证您的邮箱地址：
+        {verification_url}
+
+        此链接将在24小时后过期。
+
+        如果您没有注册账户，请忽略此邮件。
+
+        谢谢！
+        {current_app.config.get('APP_NAME', 'Blues AKA')} 团队
+        """
+
+        self.send_email(subject, [user_email], html_body, text_body)
+
+    def send_password_reset_email(self, user_email, reset_token, username):
+        """发送密码重置邮件"""
+        reset_url = f"{current_app.config.get('FRONTEND_URL', 'http://localhost:3000')}/reset-password?token={reset_token}"
+
+        subject = "重置您的密码"
+
+        html_body = render_template(
+            'emails/password_reset.html',
+            username=username,
+            reset_url=reset_url,
+            support_email=current_app.config.get('SUPPORT_EMAIL', 'support@example.com')
+        )
+
+        text_body = f"""
+        您好 {username}，
+
+        请点击以下链接重置您的密码：
+        {reset_url}
+
+        此链接将在1小时后过期。
+
+        如果您没有请求重置密码，请忽略此邮件。
+
+        谢谢！
+        {current_app.config.get('APP_NAME', 'Blues AKA')} 团队
+        """
+
+        self.send_email(subject, [user_email], html_body, text_body)
+
+    def send_welcome_email(self, user_email, username):
+        """发送欢迎邮件"""
+        subject = f"欢迎加入 {current_app.config.get('APP_NAME', 'Blues AKA')}！"
+
+        html_body = render_template(
+            'emails/welcome.html',
+            username=username,
+            app_name=current_app.config.get('APP_NAME', 'Blues AKA'),
+            support_email=current_app.config.get('SUPPORT_EMAIL', 'support@example.com')
+        )
+
+        text_body = f"""
+        您好 {username}，
+
+        欢迎加入 {current_app.config.get('APP_NAME', 'Blues AKA')}！
+
+        您的账户已经创建成功，现在可以开始使用我们的服务了。
+
+        如果您有任何问题，请联系我们的支持团队。
+
+        谢谢！
+        {current_app.config.get('APP_NAME', 'Blues AKA')} 团队
+        """
+
+        self.send_email(subject, [user_email], html_body, text_body)
+
+    def send_account_locked_email(self, user_email, username, lock_minutes=30):
+        """发送账户锁定通知邮件"""
+        subject = "您的账户已被暂时锁定"
+
+        html_body = render_template(
+            'emails/account_locked.html',
+            username=username,
+            lock_minutes=lock_minutes,
+            support_email=current_app.config.get('SUPPORT_EMAIL', 'support@example.com')
+        )
+
+        text_body = f"""
+        您好 {username}，
+
+        由于多次登录失败，您的账户已被暂时锁定 {lock_minutes} 分钟。
+
+        如果这不是您本人的操作，请立即联系我们的支持团队。
+
+        您可以在 {lock_minutes} 分钟后重新尝试登录，或通过密码重置功能恢复访问。
+
+        谢谢！
+        {current_app.config.get('APP_NAME', 'Blues AKA')} 团队
+        """
+
+        self.send_email(subject, [user_email], html_body, text_body)
+
+# 创建邮件服务实例
+email_service = EmailService()
+```
+
+### 2. 邮件模板
+
+```html
+<!-- templates/emails/verification.html -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>验证您的邮箱地址</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #007bff; color: white; text-align: center; padding: 20px; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .button { display: inline-block; padding: 12px 24px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>验证您的邮箱地址</h1>
+        </div>
+        <div class="content">
+            <p>您好 <strong>{{ username }}</strong>，</p>
+            <p>感谢您注册我们的服务！请点击下面的按钮验证您的邮箱地址：</p>
+            <div style="text-align: center;">
+                <a href="{{ verification_url }}" class="button">验证邮箱</a>
+            </div>
+            <p>如果按钮无法点击，请复制以下链接到浏览器地址栏：</p>
+            <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 4px;">{{ verification_url }}</p>
+            <p><strong>注意：</strong>此链接将在24小时后过期。</p>
+        </div>
+        <div class="footer">
+            <p>如果您没有注册账户，请忽略此邮件。</p>
+            <p>如有疑问，请联系我们：{{ support_email }}</p>
+        </div>
+    </div>
+</body>
+</html>
+```
+
+```html
+<!-- templates/emails/password_reset.html -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重置您的密码</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #dc3545; color: white; text-align: center; padding: 20px; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .button { display: inline-block; padding: 12px 24px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #666; }
+        .warning { background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 10px; border-radius: 4px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>重置您的密码</h1>
+        </div>
+        <div class="content">
+            <p>您好 <strong>{{ username }}</strong>，</p>
+            <p>我们收到了重置您账户密码的请求。请点击下面的按钮重置密码：</p>
+            <div style="text-align: center;">
+                <a href="{{ reset_url }}" class="button">重置密码</a>
+            </div>
+            <p>如果按钮无法点击，请复制以下链接到浏览器地址栏：</p>
+            <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 4px;">{{ reset_url }}</p>
+
+            <div class="warning">
+                <p><strong>安全提醒：</strong></p>
+                <ul>
+                    <li>此链接将在1小时后过期</li>
+                    <li>如果您没有请求重置密码，请忽略此邮件</li>
+                    <li>请勿将此链接分享给他人</li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer">
+            <p>如有疑问，请联系我们：{{ support_email }}</p>
+        </div>
+    </div>
+</body>
+</html>
+```
+
+---
+
+## 🔢 验证码服务实现
+
+### 1. 验证码服务类
+
+```python
+# services/captcha_service.py
+import random
+import string
+import os
+import io
+import base64
+from datetime import datetime, timedelta
+from PIL import Image, ImageDraw, ImageFont
+from flask import current_app
+import redis
+import logging
+
+class CaptchaService:
+    """验证码服务类"""
+
+    def __init__(self, redis_client=None):
+        self.redis_client = redis_client or redis.Redis(
+            host=current_app.config.get('REDIS_HOST', 'localhost'),
+            port=current_app.config.get('REDIS_PORT', 6379),
+            db=current_app.config.get('REDIS_DB', 0),
+            decode_responses=True
+        )
+
+    def generate_text_captcha(self, length=6):
+        """生成文本验证码"""
+        characters = string.ascii_uppercase + string.digits
+        return ''.join(random.choices(characters, k=length))
+
+    def generate_image_captcha(self, captcha_id=None, length=6):
+        """生成图像验证码"""
+        if not captcha_id:
+            captcha_id = str(int(datetime.now().timestamp() * 1000))
+
+        # 生成验证码文本
+        captcha_text = self.generate_text_captcha(length)
+
+        # 设置图像尺寸
+        width, height = 120, 50
+        image = Image.new('RGB', (width, height), color='white')
+        draw = ImageDraw.Draw(image)
+
+        # 添加背景噪点
+        for _ in range(100):
+            x = random.randint(0, width)
+            y = random.randint(0, height)
+            draw.point((x, y), fill=self._random_color())
+
+        # 添加干扰线
+        for _ in range(5):
+            x1 = random.randint(0, width)
+            y1 = random.randint(0, height)
+            x2 = random.randint(0, width)
+            y2 = random.randint(0, height)
+            draw.line([(x1, y1), (x2, y2)], fill=self._random_color(), width=1)
+
+        # 绘制验证码文字
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except:
+            font = ImageFont.load_default()
+
+        char_width = width // length
+        for i, char in enumerate(captcha_text):
+            x = char_width * i + random.randint(5, 15)
+            y = random.randint(5, 15)
+            draw.text((x, y), char, fill=self._random_color(), font=font)
+
+        # 转换为base64
+        buffer = io.BytesIO()
+        image.save(buffer, format='PNG')
+        image_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+        # 存储验证码到Redis（5分钟过期）
+        captcha_key = f"captcha:{captcha_id}"
+        self.redis_client.setex(captcha_key, 300, captcha_text.upper())
+
+        return {
+            'captcha_id': captcha_id,
+            'captcha_image': f"data:image/png;base64,{image_base64}"
+        }
+
+    def verify_image_captcha(self, captcha_id, user_input):
+        """验证图像验证码"""
+        if not captcha_id or not user_input:
+            return False
+
+        captcha_key = f"captcha:{captcha_id}"
+        stored_captcha = self.redis_client.get(captcha_key)
+
+        if not stored_captcha:
+            return False
+
+        # 验证码不区分大小写
+        is_valid = stored_captcha.upper() == user_input.upper()
+
+        # 验证后删除验证码
+        self.redis_client.delete(captcha_key)
+
+        return is_valid
+
+    def send_sms_captcha(self, phone_number, captcha_type='login'):
+        """发送短信验证码"""
+        # 生成6位数字验证码
+        captcha_code = ''.join(random.choices(string.digits, k=6))
+
+        # 存储验证码（5分钟过期）
+        captcha_key = f"sms_captcha:{captcha_type}:{phone_number}"
+        self.redis_client.setex(captcha_key, 300, captcha_code)
+
+        # 发送短信（这里需要集成短信服务商API）
+        try:
+            # 示例：调用短信服务API
+            # self._send_sms(phone_number, f"您的验证码是：{captcha_code}，5分钟内有效。")
+
+            logging.info(f"短信验证码已发送到 {phone_number}: {captcha_code}")
+            return True
+
+        except Exception as e:
+            logging.error(f"发送短信验证码失败: {str(e)}")
+            return False
+
+    def verify_sms_captcha(self, phone_number, user_input, captcha_type='login'):
+        """验证短信验证码"""
+        if not phone_number or not user_input:
+            return False
+
+        captcha_key = f"sms_captcha:{captcha_type}:{phone_number}"
+        stored_captcha = self.redis_client.get(captcha_key)
+
+        if not stored_captcha:
+            return False
+
+        is_valid = stored_captcha == user_input
+
+        # 验证后删除验证码
+        self.redis_client.delete(captcha_key)
+
+        return is_valid
+
+    def send_email_captcha(self, email_address, captcha_type='email_verify'):
+        """发送邮箱验证码"""
+        # 生成6位数字验证码
+        captcha_code = ''.join(random.choices(string.digits, k=6))
+
+        # 存储验证码（10分钟过期）
+        captcha_key = f"email_captcha:{captcha_type}:{email_address}"
+        self.redis_client.setex(captcha_key, 600, captcha_code)
+
+        # 发送邮件（这里需要集成邮件服务）
+        try:
+            from services.email_service import email_service
+
+            subject = "邮箱验证码"
+            html_body = f"""
+            <p>您好，</p>
+            <p>您的邮箱验证码是：<strong style="font-size: 24px; color: #007bff;">{captcha_code}</strong></p>
+            <p>此验证码将在10分钟后过期，请及时使用。</p>
+            <p>如果您没有请求此验证码，请忽略此邮件。</p>
+            """
+
+            email_service.send_email(subject, [email_address], html_body)
+
+            logging.info(f"邮箱验证码已发送到 {email_address}: {captcha_code}")
+            return True
+
+        except Exception as e:
+            logging.error(f"发送邮箱验证码失败: {str(e)}")
+            return False
+
+    def verify_email_captcha(self, email_address, user_input, captcha_type='email_verify'):
+        """验证邮箱验证码"""
+        if not email_address or not user_input:
+            return False
+
+        captcha_key = f"email_captcha:{captcha_type}:{email_address}"
+        stored_captcha = self.redis_client.get(captcha_key)
+
+        if not stored_captcha:
+            return False
+
+        is_valid = stored_captcha == user_input
+
+        # 验证后删除验证码
+        self.redis_client.delete(captcha_key)
+
+        return is_valid
+
+    def check_rate_limit(self, identifier, limit=5, window=300):
+        """检查请求频率限制"""
+        rate_limit_key = f"rate_limit:{identifier}"
+
+        # 获取当前计数
+        current_count = self.redis_client.get(rate_limit_key) or 0
+
+        if int(current_count) >= limit:
+            return False
+
+        # 增加计数
+        pipe = self.redis_client.pipeline()
+        pipe.incr(rate_limit_key)
+        pipe.expire(rate_limit_key, window)
+        pipe.execute()
+
+        return True
+
+    def _random_color(self):
+        """生成随机颜色"""
+        return (
+            random.randint(0, 150),
+            random.randint(0, 150),
+            random.randint(0, 150)
+        )
+
+    def _send_sms(self, phone_number, message):
+        """发送短信（需要实现具体的短信服务商API调用）"""
+        # 这里需要根据实际使用的短信服务商实现
+        # 例如：阿里云短信、腾讯云短信、华为云短信等
+        pass
+
+# 创建验证码服务实例
+captcha_service = CaptchaService()
+```
+
+### 2. 验证码API路由
+
+```python
+# routes/captcha_routes.py
+from flask import Blueprint, request, jsonify
+from services.captcha_service import captcha_service
+from utils import success_response, error_response
+import logging
+
+captcha_bp = Blueprint('captcha', __name__, url_prefix='/api/v1')
+
+@captcha_bp.route('/captcha/image', methods=['GET'])
+def generate_image_captcha():
+    """生成图像验证码"""
+    try:
+        result = captcha_service.generate_image_captcha()
+        return success_response(200, "验证码生成成功", result)
+
+    except Exception as e:
+        logging.error(f"生成图像验证码失败: {str(e)}")
+        return error_response(500, "服务器内部错误")
+
+@captcha_bp.route('/captcha/sms', methods=['POST'])
+def send_sms_captcha():
+    """发送短信验证码"""
+    try:
+        data = request.get_json()
+        phone_number = data.get('phone_number')
+        captcha_type = data.get('captcha_type', 'login')
+
+        if not phone_number:
+            return error_response(400, "手机号码不能为空")
+
+        # 检查手机号码格式
+        if not _validate_phone_number(phone_number):
+            return error_response(400, "手机号码格式不正确")
+
+        # 检查发送频率限制
+        if not captcha_service.check_rate_limit(f"sms:{phone_number}", limit=3, window=300):
+            return error_response(429, "发送过于频繁，请稍后再试")
+
+        success = captcha_service.send_sms_captcha(phone_number, captcha_type)
+
+        if success:
+            return success_response(200, "验证码发送成功")
+        else:
+            return error_response(500, "验证码发送失败")
+
+    except Exception as e:
+        logging.error(f"发送短信验证码失败: {str(e)}")
+        return error_response(500, "服务器内部错误")
+
+@captcha_bp.route('/captcha/email', methods=['POST'])
+def send_email_captcha():
+    """发送邮箱验证码"""
+    try:
+        data = request.get_json()
+        email_address = data.get('email_address')
+        captcha_type = data.get('captcha_type', 'email_verify')
+
+        if not email_address:
+            return error_response(400, "邮箱地址不能为空")
+
+        # 检查邮箱格式
+        if not _validate_email(email_address):
+            return error_response(400, "邮箱格式不正确")
+
+        # 检查发送频率限制
+        if not captcha_service.check_rate_limit(f"email:{email_address}", limit=3, window=600):
+            return error_response(429, "发送过于频繁，请稍后再试")
+
+        success = captcha_service.send_email_captcha(email_address, captcha_type)
+
+        if success:
+            return success_response(200, "验证码发送成功")
+        else:
+            return error_response(500, "验证码发送失败")
+
+    except Exception as e:
+        logging.error(f"发送邮箱验证码失败: {str(e)}")
+        return error_response(500, "服务器内部错误")
+
+def _validate_phone_number(phone_number):
+    """验证手机号码格式"""
+    import re
+    pattern = r'^1[3-9]\d{9}$'  # 中国大陆手机号格式
+    return re.match(pattern, phone_number) is not None
+
+def _validate_email(email):
+    """验证邮箱格式"""
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+```
+
+## 📁 项目结构与配置
+
+### 1. 完整项目结构
+
+```
+blues-aka/
+├── app.py                    # 应用入口文件
+├── config.py                 # 配置文件
+├── requirements.txt           # 依赖包列表
+├── requirements-dev.txt       # 开发环境依赖包
+├── .env.example              # 环境变量示例
+├── .gitignore               # Git忽略文件
+├── README.md                 # 项目说明文档
+├── 企业级用户管理API接口设计文档.md # API设计文档
+│
+├── blues_aka/               # 主应用包
+│   ├── __init__.py          # 包初始化
+│   ├── models/              # 数据模型
+│   │   ├── __init__.py
+│   │   ├── user.py          # 用户模型
+│   │   ├── role.py          # 角色模型
+│   │   └── permission.py    # 权限模型
+│   ├── routes/              # 路由模块
+│   │   ├── __init__.py
+│   │   ├── auth.py          # 认证路由
+│   │   ├── user.py          # 用户路由
+│   │   └── captcha.py       # 验证码路由
+│   ├── services/            # 服务层
+│   │   ├── __init__.py
+│   │   ├── email_service.py # 邮件服务
+│   │   ├── captcha_service.py # 验证码服务
+│   │   └── auth_service.py  # 认证服务
+│   ├── utils/               # 工具函数
+│   │   ├── __init__.py
+│   │   ├── decorators.py    # 装饰器
+│   │   ├── validators.py    # 验证器
+│   │   └── helpers.py       # 辅助函数
+│   └── extensions.py        # 扩展初始化
+│
+├── migrations/              # 数据库迁移文件
+│   ├── versions/            # 迁移版本
+│   ├── env.py               # Alembic环境配置
+│   └── alembic.ini          # Alembic配置文件
+│
+├── templates/               # Jinja2模板
+│   ├── emails/              # 邮件模板
+│   │   ├── verification.html
+│   │   ├── password_reset.html
+│   │   └── welcome.html
+│   └── errors/              # 错误页面模板
+│       ├── 404.html
+│       ├── 500.html
+│       └── 403.html
+│
+├── static/                  # 静态文件
+│   ├── css/
+│   ├── js/
+│   └── images/
+│
+├── scripts/                 # 脚本文件
+│   ├── create_admin.py      # 创建管理员脚本
+│   ├── seed_data.py          # 数据种子脚本
+│   └── migrate.sh            # 迁移脚本
+│
+├── tests/                   # 测试文件
+│   ├── __init__.py
+│   ├── conftest.py           # pytest配置
+│   ├── test_auth.py          # 认证测试
+│   ├── test_user.py          # 用户测试
+│   └── test_utils.py         # 工具函数测试
+│
+├── logs/                    # 日志文件目录
+├── uploads/                 # 上传文件目录
+└── docs/                    # 文档目录
+    ├── api.md              # API文档
+    └── deployment.md       # 部署文档
+```
+
+### 2. 应用入口文件
+
+```python
+# app.py
+import os
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_mail import Mail
+from flask_jwt_extended import JWTManager
+from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+import logging
+from logging.handlers import RotatingFileHandler
+
+from config import config
+from blues_aka.extensions import db, migrate, mail, jwt, cors, limiter
+
+def create_app(config_name=None):
+    """应用工厂函数"""
+    if config_name is None:
+        config_name = os.getenv('FLASK_CONFIG', 'default')
+
+    app = Flask(__name__)
+    app.config.from_object(config[config_name])
+    config[config_name].init_app(app)
+
+    # 初始化扩展
+    db.init_app(app)
+    migrate.init_app(app, db)
+    mail.init_app(app)
+    jwt.init_app(app)
+    cors.init_app(app)
+    limiter.init_app(app)
+
+    # 注册蓝图
+    from blues_aka.routes.auth import auth_bp
+    from blues_aka.routes.user import user_bp
+    from blues_aka.routes.captcha import captcha_bp
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(user_bp)
+    app.register_blueprint(captcha_bp)
+
+    # 注册错误处理器
+    register_error_handlers(app)
+
+    # 注册CLI命令
+    register_cli_commands(app)
+
+    # 配置日志
+    setup_logging(app)
+
+    # 配置JWT
+    setup_jwt(app)
+
+    return app
+
+def register_error_handlers(app):
+    """注册错误处理器"""
+    @app.errorhandler(400)
+    def bad_request(error):
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 400,
+            'message': '请求参数错误',
+            'timestamp': app.get_current_time()
+        }), 400
+
+    @app.errorhandler(401)
+    def unauthorized(error):
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 401,
+            'message': '未认证或认证失败',
+            'timestamp': app.get_current_time()
+        }), 401
+
+    @app.errorhandler(403)
+    def forbidden(error):
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 403,
+            'message': '权限不足',
+            'timestamp': app.get_current_time()
+        }), 403
+
+    @app.errorhandler(404)
+    def not_found(error):
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 404,
+            'message': '资源不存在',
+            'timestamp': app.get_current_time()
+        }), 404
+
+    @app.errorhandler(429)
+    def rate_limit_exceeded(error):
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 429,
+            'message': '请求过于频繁，请稍后再试',
+            'timestamp': app.get_current_time()
+        }), 429
+
+    @app.errorhandler(500)
+    def internal_server_error(error):
+        from flask import jsonify
+        app.logger.error(f"Internal server error: {error}")
+        return jsonify({
+            'success': False,
+            'code': 500,
+            'message': '服务器内部错误',
+            'timestamp': app.get_current_time()
+        }), 500
+
+def register_cli_commands(app):
+    """注册CLI命令"""
+    @app.cli.command()
+    def init_db():
+        """初始化数据库"""
+        from blues_aka import db
+        db.create_all()
+        print("数据库初始化完成")
+
+    @app.cli.command()
+    def create_admin():
+        """创建管理员用户"""
+        from scripts.create_admin import create_admin_user
+        create_admin_user()
+
+    @app.cli.command()
+    def seed_data():
+        """添加种子数据"""
+        from scripts.seed_data import create_test_users
+        create_test_users()
+
+def setup_logging(app):
+    """配置日志"""
+    if not app.debug and not app.testing:
+        # 确保日志目录存在
+        if not os.path.exists('logs'):
+            os.mkdir('logs')
+
+        # 文件日志处理器
+        file_handler = RotatingFileHandler(
+            'logs/blues_aka.log',
+            maxBytes=10240000,
+            backupCount=10
+        )
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+        ))
+        file_handler.setLevel(logging.INFO)
+        app.logger.addHandler(file_handler)
+
+        # 错误日志处理器
+        error_handler = RotatingFileHandler(
+            'logs/errors.log',
+            maxBytes=10240000,
+            backupCount=10
+        )
+        error_handler.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+        ))
+        error_handler.setLevel(logging.ERROR)
+        app.logger.addHandler(error_handler)
+
+        app.logger.setLevel(logging.INFO)
+        app.logger.info('Blues AKA startup')
+
+def setup_jwt(app):
+    """配置JWT"""
+    @jwt.token_in_blocklist_loader
+    def check_if_token_revoked(jwt_header, jwt_payload):
+        """检查令牌是否被撤销"""
+        # 这里可以实现令牌黑名单检查
+        return False
+
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        """令牌过期回调"""
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 401,
+            'message': '令牌已过期，请重新登录'
+        }), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(error):
+        """无效令牌回调"""
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 401,
+            'message': '令牌无效'
+        }), 401
+
+    @jwt.unauthorized_loader
+    def missing_token_callback(error):
+        """缺少令牌回调"""
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 401,
+            'message': '缺少访问令牌'
+        }), 401
+
+    @jwt.needs_fresh_token_loader
+    def token_not_fresh_callback(jwt_header, jwt_payload):
+        """令牌需要刷新回调"""
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 401,
+            'message': '需要新的令牌'
+        }), 401
+
+    @jwt.revoked_token_loader
+    def revoked_token_callback(jwt_header, jwt_payload):
+        """令牌被撤销回调"""
+        from flask import jsonify
+        return jsonify({
+            'success': False,
+            'code': 401,
+            'message': '令牌已被撤销'
+        }), 401
+
+# 添加当前时间获取方法
+def get_current_time():
+    from datetime import datetime
+    return datetime.utcnow().isoformat()
+
+# 创建应用实例
+app = create_app()
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
+```
+
+### 3. 扩展初始化
+
+```python
+# blues_aka/extensions.py
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from flask_mail import Mail
+from flask_jwt_extended import JWTManager
+from flask_cors import CORS
+from flask_limiter import Limiter
+
+# 创建扩展实例
+db = SQLAlchemy()
+migrate = Migrate()
+mail = Mail()
+jwt = JWTManager()
+cors = CORS()
+limiter = Limiter()
+```
+
+### 4. 依赖包配置
+
+```txt
+# requirements.txt
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.0.5
+Flask-Mail==0.9.1
+Flask-JWT-Extended==4.5.2
+Flask-CORS==4.0.0
+Flask-Limiter==3.5.0
+SQLAlchemy==2.0.21
+Werkzeug==2.3.7
+PyJWT==2.8.0
+redis==5.0.0
+psycopg2-binary==2.9.7
+Pillow==10.0.0
+marshmallow==3.20.1
+python-dotenv==1.0.0
+gunicorn==21.2.0
+```
+
+```txt
+# requirements-dev.txt
+-r requirements.txt
+pytest==7.4.2
+pytest-flask==1.2.0
+pytest-cov==4.1.0
+black==23.7.0
+flake8==6.0.0
+mypy==1.5.1
+isort==5.12.0
+factory-boy==3.3.0
+```
+
+### 5. 环境变量配置
+
+```bash
+# .env.example
+# 基础配置
+FLASK_APP=app.py
+FLASK_ENV=development
+SECRET_KEY=your-secret-key-here
+
+# 数据库配置
+DATABASE_URL=postgresql://user:password@localhost/blues_aka
+DEV_DATABASE_URL=postgresql://dev:dev@localhost/blues_aka_dev
+TEST_DATABASE_URL=postgresql://test:test@localhost/blues_aka_test
+
+# JWT配置
+JWT_SECRET_KEY=your-jwt-secret-key
+
+# Redis配置
+REDIS_URL=redis://localhost:6379/0
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+
+# 邮件配置
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-email@gmail.com
+MAIL_PASSWORD=your-app-password
+MAIL_DEFAULT_SENDER=your-email@gmail.com
+
+# 应用配置
+APP_NAME=Blues AKA
+FRONTEND_URL=http://localhost:3000
+SUPPORT_EMAIL=support@example.com
+
+# 文件上传配置
+MAX_CONTENT_LENGTH=16777216
+UPLOAD_FOLDER=uploads
+
+# 安全配置
+WTF_CSRF_ENABLED=true
+WTF_CSRF_TIME_LIMIT=3600
+```
+
+### 6. Git配置
+
+```gitignore
+# .gitignore
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Uploads
+uploads/
+temp/
+
+# Node modules (if using frontend build tools)
+node_modules/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# pytest
+.coverage
+htmlcov/
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+```
+
+### 7. Docker配置
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+# 设置工作目录
+WORKDIR /app
+
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 安装系统依赖
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装Python依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制项目文件
+COPY . .
+
+# 创建必要的目录
+RUN mkdir -p logs uploads
+
+# 设置权限
+RUN chmod +x scripts/migrate.sh
+
+# 暴露端口
+EXPOSE 5000
+
+# 启动命令
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+```
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=postgresql://postgres:password@db:5432/blues_aka
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=blues_aka
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+### 8. 部署配置
+
+```nginx
+# nginx.conf
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream app {
+        server app:5000;
+    }
+
+    server {
+        listen 80;
+        server_name your-domain.com;
+
+        # 重定向到HTTPS
+        return 301 https://$server_name$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name your-domain.com;
+
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+        client_max_body_size 16M;
+
+        location / {
+            proxy_pass http://app;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /static/ {
+            alias /app/static/;
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+        }
+    }
+}
+```
+
 该API设计可以直接应用于生产环境，为互联网企业提供稳定、安全、高性能的用户管理服务。
