@@ -1,6 +1,4 @@
-from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import CITEXT
-from werkzeug.security import generate_password_hash, check_password_hash
 from blues_aka.extensions import db
 
 class User(db.Model):
