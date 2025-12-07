@@ -1,3 +1,5 @@
+import logging
+
 from flask import Flask
 
 from blues_aka.blueprints import init_blueprints

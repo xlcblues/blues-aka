@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import CITEXT
 from blues_aka.extensions import db
 
@@ -36,8 +37,8 @@ class User(db.Model):
     preferences = db.Column(db.JSON)  # 用户偏好设置
 
     # 时间戳
-    created_at = db.Column(db.DateTime, default=db.datetime.utcnow, nullable=False, index=True)
-    updated_at = db.Column(db.DateTime, default=db.datetime.utcnow, onupdate=db.datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=func.now(), nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
 
     def __repr__(self):
         return f'<User {self.username}>'
