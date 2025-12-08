@@ -1,4 +1,6 @@
 import logging
+from sqlite3 import IntegrityError
+
 from flask import Blueprint, request, app
 from marshmallow import ValidationError
 
@@ -8,11 +10,15 @@ from blues_aka.common.responseapi import handle_api_response
 from blues_aka.user.models import User
 from blues_aka.user.schemas import userQuerySchema
 from blues_aka.user.schemas import userQueryRespSchema
+from blues_aka.user.schemas import userCreateSchema
+from blues_aka.user.schemas import userUpdateRespSchema
+from blues_aka.extensions import db
 
 # 设置日志
 logger = logging.getLogger(__name__)
 user_bp = Blueprint('user', __name__, url_prefix='/user')
 
+# 管理员查询用户
 @user_bp.route('/users', methods=['GET'])
 @handle_api_response
 def get_users():
@@ -84,6 +90,86 @@ def get_users():
             error_code="USER_QUERY_FAILED",
         )
 
+
+# 创建新用户
+@user_bp.route('/users', methods=['POST'])
+@handle_api_response
+def create_user():
+    """
+        创建新用户接口
+        接收JSON格式的用户数据，验证后创建新用户
+    """
+    try:
+        json_data = request.get_json()
+
+        if json_data is None:
+            raise BusinessException(
+                code=400,
+                message="请求体不能为空",
+                error_code="EMPTY_REQUEST_BODY"
+            )
+
+        # 参数校验
+        create_user = userCreateSchema()
+        validated_data = create_user.load(json_data)
+
+        existing_user = User.query.filter(
+            User.username == validated_data['username'],
+            User.email == validated_data['email'],
+        ).first()
+
+        if existing_user:
+            field = 'username' if existing_user.username == validated_data['username'] else 'email'
+            raise BusinessException(
+                code=409,
+                message=f"{field} 已被使用",
+                error_code="DUPLICATE_USER"
+            )
+
+        new_user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            password_hash=validated_data['password'],
+        )
+
+        db.session.add(new_user)
+        db.session.commit()
+
+        response = userUpdateRespSchema()
+        result = response.dump(new_user)
+
+        return success(data=result, message='用户创建成功！')
+
+    except ValidationError as e:
+        logger.warning(f"用户创建参数验证失败: {e.messages}")
+        raise BusinessException(
+            code=400,
+            message="参数校验失败",
+            error_code="INVALID_PARAMS",
+            details=e.messages
+        )
+
+    except IntegrityError as e:
+        db.session.rollback()
+        logger.error(f"数据库完整性错误: {str(e)}")
+        raise BusinessException(
+            code=409,
+            message="用户创建失败，数据冲突",
+            error_code="DATABASE_INTEGRITY_ERROR"
+        )
+
+    except BusinessException as e:
+        # 已知的业务异常，直接抛出
+        raise e
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"用户创建失败: {str(e)}", exc_info=True)
+        raise BusinessException(
+            code=500,
+            message="用户创建失败",
+            error_code="USER_CREATION_FAILED"
+        )
 
 
 
