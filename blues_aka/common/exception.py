@@ -9,7 +9,7 @@ class BusinessException(Exception):
         super().__init__()
         self.code = code
         self.message = message
-        self.status_code = error_code
+        self.error_code = error_code
 
     def to_dict(self):
         return {'code': self.code, 'message': self.message, 'error_code': self.error_code}
