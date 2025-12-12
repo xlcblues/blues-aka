@@ -1,6 +1,4 @@
-from .UserQueryRespSchema import userQueryRespSchema
-from .UserQuerySchema import userQuerySchema
-from .UserCreateSchema import userCreateSchema
-from .UserCreateSchema import userUpdateRespSchema
+from .schemas import *
 
-__all__ = ['userQueryRespSchema', 'userQueryRespSchema', 'userCreateSchema', 'userUpdateRespSchema']
+__all__ = ['userQueryRespSchema', 'userQueryRespSchema', 'userCreateSchema', 'userCreateRespSchema',
+           'userUpdateSchema', 'userUpdateRespSchema']

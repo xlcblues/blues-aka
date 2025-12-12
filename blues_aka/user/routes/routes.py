@@ -8,10 +8,8 @@ from blues_aka.common.exception import BusinessException
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.user.models import User
-from blues_aka.user.schemas import userQuerySchema
-from blues_aka.user.schemas import userQueryRespSchema
-from blues_aka.user.schemas import userCreateSchema
-from blues_aka.user.schemas import userUpdateRespSchema
+from blues_aka.user.schemas import *
+
 from blues_aka.extensions import db
 
 # 设置日志
@@ -76,19 +74,11 @@ def get_users():
         return success(data=response)
 
     except ValidationError as e:
-        raise BusinessException(
-            code=400,
-            message="参数校验失败",
-            error_code="INVALID_PARAMS"
-        )
+        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
 
     except Exception as e:
         # 其他异常
-        raise BusinessException(
-            code=500,
-            message="查询用户失败",
-            error_code="USER_QUERY_FAILED",
-        )
+        raise BusinessException(code=500, message="查询用户失败", error_code="USER_QUERY_FAILED")
 
 
 # 创建新用户
@@ -103,11 +93,7 @@ def create_user():
         json_data = request.get_json()
 
         if json_data is None:
-            raise BusinessException(
-                code=400,
-                message="请求体不能为空",
-                error_code="EMPTY_REQUEST_BODY"
-            )
+            raise BusinessException(code=400, message="请求体不能为空", error_code="EMPTY_REQUEST_BODY")
 
         # 参数校验
         create_user = userCreateSchema()
@@ -120,11 +106,7 @@ def create_user():
 
         if existing_user:
             field = 'username' if existing_user.username == validated_data['username'] else 'email'
-            raise BusinessException(
-                code=409,
-                message=f"{field} 已被使用",
-                error_code="DUPLICATE_USER"
-            )
+            raise BusinessException(code=409, message=f"{field} 已被使用", error_code="DUPLICATE_USER")
 
         new_user = User(
             username=validated_data['username'],
@@ -135,28 +117,19 @@ def create_user():
         db.session.add(new_user)
         db.session.commit()
 
-        response = userUpdateRespSchema()
+        response = userCreateRespSchema()
         result = response.dump(new_user)
 
         return success(data=result, message='用户创建成功！')
 
     except ValidationError as e:
         logger.warning(f"用户创建参数验证失败: {e.messages}")
-        raise BusinessException(
-            code=400,
-            message="参数校验失败",
-            error_code="INVALID_PARAMS",
-            details=e.messages
-        )
+        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
 
     except IntegrityError as e:
         db.session.rollback()
         logger.error(f"数据库完整性错误: {str(e)}")
-        raise BusinessException(
-            code=409,
-            message="用户创建失败，数据冲突",
-            error_code="DATABASE_INTEGRITY_ERROR"
-        )
+        raise BusinessException(code=409, message="用户创建失败，数据冲突", error_code="DATABASE_INTEGRITY_ERROR")
 
     except BusinessException as e:
         # 已知的业务异常，直接抛出
@@ -165,11 +138,100 @@ def create_user():
     except Exception as e:
         db.session.rollback()
         logger.error(f"用户创建失败: {str(e)}", exc_info=True)
-        raise BusinessException(
-            code=500,
-            message="用户创建失败",
-            error_code="USER_CREATION_FAILED"
-        )
+        raise BusinessException(code=500, message="用户创建失败", error_code="USER_CREATION_FAILED")
+
+# 修改用户
+@user_bp.route('/users/<int: id>', methods=['PUT'])
+@handle_api_response
+def update_user(id):
+    try:
+        user = User.query.get(id)
+        if not user:
+            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+
+        json_data = request.get_json()
+        if json_data is None:
+            raise BusinessException(code=400, message="请求体不能为空", error_code="EMPTY_REQUEST_BODY")
+
+        update_schema = userUpdateSchema()
+        validated_user = update_schema.load(json_data)
+
+        if 'username' in validated_user:
+            existing_user = User.query.filter(
+                User.username == validated_user['username'],
+                User.id != id
+            ).first()
+            if existing_user:
+                raise BusinessException(code=409, message="用户名已被使用", error_code="USERNAME_EXISTS")
+
+        if 'email' in validated_user:
+            existing_user = User.query.filter(
+                User.email == validated_user['email'],
+                User.id != id
+            ).first()
+            if existing_user:
+                raise BusinessException(code=409, message="邮箱已被使用", error_code="EMAIL_EXISTS")
+
+        for key, value in validated_user.items():
+            if hasattr(user, key):
+                setattr(user, key, value)
+
+        db.session.commit()
+
+        response = userUpdateRespSchema()
+        result = response.dump(user)
+        return success(data=result, message='用户信息更新成功！')
+
+    except ValidationError as e:
+        logger.warning(f"用户更新参数验证失败: {e.messages}")
+        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
+
+    except IntegrityError as e:
+        db.session.rollback()
+        logger.error(f"数据库完整性错误: {str(e)}")
+        raise BusinessException(code=409, message="用户更新失败，数据冲突", error_code="DATABASE_INTEGRITY_ERROR")
+
+    except BusinessException as e:
+        # 已知的业务异常，直接抛出
+        raise e
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"用户更新失败: {str(e)}", exc_info=True)
+        raise BusinessException(code=500, message="用户更新失败", error_code="USER_UPDATE_FAILED")
+
+# 删除用户
+@user_bp.route('/users/<int:id>', methods=['DELETE'])
+@handle_api_response
+def delete_user(id):
+    """
+    删除用户接口
+    根据用户ID删除用户
+    """
+    try:
+        user = User.query.get(id)
+        if not user:
+            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+
+        db.session.delete(user)
+        db.session.commit()
+
+        return success(message='用户删除成功！')
+
+    except IntegrityError as e:
+        db.session.rollback()
+        logger.error(f"数据库完整性错误: {str(e)}")
+        raise BusinessException(code=409, message="用户删除失败，存在关联数据", error_code="DATABASE_INTEGRITY_ERROR")
+
+    except BusinessException as e:
+        # 已知的业务异常，直接抛出
+        raise e
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"用户删除失败: {str(e)}", exc_info=True)
+        raise BusinessException(code=500, message="用户删除失败", error_code="USER_DELETE_FAILED")
+
 
 
 

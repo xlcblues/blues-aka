@@ -58,7 +58,7 @@ def register_error_handlers(app):
         response.status_code = error.code
         return response
 
-    @app.errorhandler(HTTPException)
+    @app.errorhandler(Exception)
     def handle_generic_exception(error):
         # 错误日志
         app.logger.error(
