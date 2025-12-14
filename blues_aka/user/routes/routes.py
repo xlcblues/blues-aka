@@ -8,9 +8,9 @@ from blues_aka.common.exception import BusinessException
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.user.models import User
-from blues_aka.user.schemas import *
 
 from blues_aka.extensions import db
+from blues_aka.user.schemas import userCreateSchema, userUpdateSchema, userUpdateRespSchema, userQuerySchema, userQueryRespSchema, userCreateRespSchema
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -141,7 +141,7 @@ def create_user():
         raise BusinessException(code=500, message="用户创建失败", error_code="USER_CREATION_FAILED")
 
 # 修改用户
-@user_bp.route('/users/<int: id>', methods=['PUT'])
+@user_bp.route('/users/<int:id>', methods=['PUT'])
 @handle_api_response
 def update_user(id):
     try:
