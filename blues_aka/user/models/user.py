@@ -42,3 +42,6 @@ class User(db.Model):
 
     def __repr__(self):
         return f'<User {self.username}>'
+
+    def checkPassword(self, password):
+        return self.password_hash and self.password_hash == password
