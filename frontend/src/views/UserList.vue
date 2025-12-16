@@ -46,7 +46,16 @@
 
     <!-- 用户列表表格 -->
     <div class="table-container">
-      <div class="table-header">🎸 用户列表</div>
+      <div class="table-header">
+        <span>🎸 用户列表</span>
+        <div class="table-actions">
+          <el-tooltip content="刷新数据 (F5)" placement="top">
+            <el-button circle @click="fetchUsers" :loading="loading" class="refresh-btn">
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+          </el-tooltip>
+        </div>
+      </div>
       <el-table
         v-loading="loading"
         :data="userList"
@@ -54,7 +63,7 @@
         style="width: 100%"
         @sort-change="handleSortChange"
         class="user-table"
-        :empty-text="'🐱‍👤 暂无用户数据，点击上方按钮新增用户'"
+        :empty-text="getEmptyText()"
       >
       <el-table-column prop="id" label="#" width="60" sortable="custom" align="center">
         <template #default="{ row }">
@@ -286,15 +295,61 @@ export default {
         const response = await userApi.getUsers(params)
 
         if (response.code === 200) {
-          userList.value = response.data.users
-          pagination.total = response.data.pagination.total
-          pagination.pages = response.data.pagination.pages
+          userList.value = response.data.users || []
+          pagination.total = response.data.pagination?.total || 0
+          pagination.pages = response.data.pagination?.pages || 0
+
+          // 如果没有数据且不在第一页，跳转到第一页
+          if (userList.value.length === 0 && pagination.page > 1) {
+            pagination.page = 1
+            fetchUsers()
+          }
         } else {
-          ElMessage.error(response.message || '获取用户列表失败')
+          ElMessage({
+            message: `❌ ${response.message || '获取用户列表失败'}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
         }
       } catch (error) {
         console.error('获取用户列表失败:', error)
-        ElMessage.error('获取用户列表失败')
+        let errorMessage = '获取用户列表失败'
+
+        if (error.response) {
+          const status = error.response.status
+          if (status === 401) {
+            errorMessage = '未授权访问，请重新登录'
+            // 可以在这里添加自动跳转到登录页的逻辑
+            setTimeout(() => {
+              window.location.href = '/login'
+            }, 2000)
+          } else if (status === 403) {
+            errorMessage = '权限不足，无法访问用户列表'
+          } else if (status === 500) {
+            errorMessage = '服务器内部错误，请稍后重试'
+          } else if (status === 503) {
+            errorMessage = '服务暂时不可用，请稍后重试'
+          }
+        } else if (error.code === 'ECONNABORTED') {
+          errorMessage = '请求超时，请检查网络连接'
+        } else if (error.message.includes('Network Error')) {
+          errorMessage = '网络连接失败，请检查网络设置'
+        } else {
+          errorMessage = '未知错误，请联系系统管理员'
+        }
+
+        ElMessage({
+          message: `❌ ${errorMessage}`,
+          type: 'error',
+          duration: 5000,
+          showClose: true
+        })
+
+        // 清空数据，防止显示过期数据
+        userList.value = []
+        pagination.total = 0
+        pagination.pages = 0
       } finally {
         loading.value = false
       }
@@ -361,26 +416,85 @@ export default {
     const handleDelete = async (row) => {
       try {
         await ElMessageBox.confirm(
-          `确定要删除用户 "${row.username}" 吗？此操作不可恢复！`,
-          '警告',
+          `🚨 确定要删除用户 "${row.username}" 吗？\n\n⚠️ 此操作不可恢复，请谨慎操作！`,
+          '删除用户确认',
           {
-            confirmButtonText: '确定',
+            confirmButtonText: '🗑️ 确认删除',
+            cancelButtonText: '❌ 取消操作',
+            type: 'error',
+            dangerouslyUseHTMLString: false,
+            center: true
+          }
+        )
+
+        // 添加删除前的二次确认
+        await ElMessageBox.prompt(
+          `请输入用户名 "${row.username}" 以确认删除操作`,
+          '🔐 安全验证',
+          {
+            confirmButtonText: '确认',
             cancelButtonText: '取消',
-            type: 'warning'
+            inputType: 'text',
+            inputValidator: (value) => {
+              if (value !== row.username) {
+                return '输入的用户名不匹配，请重新输入'
+              }
+              return true
+            }
           }
         )
 
         const response = await userApi.deleteUser(row.id)
         if (response.code === 200) {
-          ElMessage.success('删除成功')
+          ElMessage({
+            message: `✅ 用户 "${row.username}" 删除成功！`,
+            type: 'success',
+            duration: 3000,
+            showClose: true
+          })
           fetchUsers()
         } else {
-          ElMessage.error(response.message || '删除失败')
+          ElMessage({
+            message: `❌ ${response.message || '删除失败'}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
         }
       } catch (error) {
-        if (error !== 'cancel') {
+        if (error === 'cancel' || error === 'close') {
+          ElMessage({
+            message: '🚫 删除操作已取消',
+            type: 'info',
+            duration: 2000
+          })
+        } else {
           console.error('删除用户失败:', error)
-          ElMessage.error('删除失败')
+          let errorMessage = '删除失败'
+
+          if (error.response) {
+            const status = error.response.status
+            if (status === 404) {
+              errorMessage = '用户不存在或已被删除'
+            } else if (status === 403) {
+              errorMessage = '权限不足，无法删除该用户'
+            } else if (status === 409) {
+              errorMessage = '该用户存在关联数据，无法删除'
+            } else if (status === 500) {
+              errorMessage = '服务器错误，请稍后重试'
+            }
+          } else if (error.code === 'ECONNABORTED') {
+            errorMessage = '请求超时，请检查网络连接'
+          } else {
+            errorMessage = '网络错误，请检查后端服务状态'
+          }
+
+          ElMessage({
+            message: `❌ ${errorMessage}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
         }
       }
     }
@@ -418,15 +532,47 @@ export default {
         }
 
         if (response.code === 200) {
-          ElMessage.success(isEdit.value ? '更新成功' : '创建成功')
+          ElMessage({
+            message: isEdit.value ? '✅ 用户信息更新成功！' : '🎉 用户创建成功！',
+            type: 'success',
+            duration: 3000,
+            showClose: true
+          })
           dialogVisible.value = false
           fetchUsers()
         } else {
-          ElMessage.error(response.message || '操作失败')
+          ElMessage({
+            message: `❌ ${response.message || '操作失败'}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
         }
       } catch (error) {
         console.error('提交失败:', error)
-        ElMessage.error('操作失败')
+        let errorMessage = '操作失败'
+
+        if (error.response) {
+          const status = error.response.status
+          if (status === 409) {
+            errorMessage = '用户名或邮箱已被使用'
+          } else if (status === 400) {
+            errorMessage = '请求数据格式错误'
+          } else if (status === 500) {
+            errorMessage = '服务器内部错误，请稍后重试'
+          }
+        } else if (error.code === 'ECONNABORTED') {
+          errorMessage = '请求超时，请检查网络连接'
+        } else {
+          errorMessage = '网络错误，请检查后端服务是否正常运行'
+        }
+
+        ElMessage({
+          message: `❌ ${errorMessage}`,
+          type: 'error',
+          duration: 5000,
+          showClose: true
+        })
       } finally {
         submitting.value = false
       }
@@ -492,10 +638,52 @@ export default {
       return new Date(dateTime).toLocaleString('zh-CN')
     }
 
-    // 组件挂载时获取数据
+    // 获取空状态文本
+    const getEmptyText = () => {
+      const hasSearch = searchForm.username || searchForm.email
+      if (hasSearch) {
+        return '🔍 没有找到匹配的用户，请尝试其他搜索条件'
+      }
+      return '🐱‍👤 暂无用户数据，点击上方"新增用户"按钮创建第一个用户'
+    }
+
+    // 处理键盘快捷键
+    const handleKeydown = (event) => {
+      // Ctrl/Cmd + N: 新增用户
+      if ((event.ctrlKey || event.metaKey) && event.key === 'n') {
+        event.preventDefault()
+        handleCreate()
+      }
+      // F5: 刷新数据
+      else if (event.key === 'F5') {
+        event.preventDefault()
+        fetchUsers()
+      }
+      // Ctrl/Cmd + F: 聚焦搜索框
+      else if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+        event.preventDefault()
+        // 聚焦到用户名搜索框
+        const usernameInput = document.querySelector('input[placeholder="请输入用户名"]')
+        if (usernameInput) {
+          usernameInput.focus()
+        }
+      }
+    }
+
+    // 组件挂载时获取数据和绑定事件
     onMounted(() => {
       fetchUsers()
+      // 绑定键盘事件
+      document.addEventListener('keydown', handleKeydown)
     })
+
+    // 组件卸载时清理事件
+    const cleanup = () => {
+      document.removeEventListener('keydown', handleKeydown)
+    }
+
+    // 导出清理函数
+    window.addEventListener('beforeunload', cleanup)
 
     return {
       // 响应式数据
@@ -526,7 +714,8 @@ export default {
       getStatusType,
       getStatusText,
       getStatusIcon,
-      formatDateTime
+      formatDateTime,
+      getEmptyText
     }
   }
 }
@@ -663,12 +852,46 @@ export default {
 }
 
 .table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   font-size: 16px;
   font-weight: 600;
   color: #2c3e50;
   margin-bottom: 16px;
   padding-bottom: 8px;
   border-bottom: 1px solid #ebeef5;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refresh-btn {
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+  border: none;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.refresh-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(56, 161, 105, 0.4);
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+}
+
+/* 快捷键提示 */
+.search-section::after {
+  content: '提示: Ctrl+F 搜索 | Ctrl+N 新增 | F5 刷新';
+  position: absolute;
+  bottom: 8px;
+  right: 15px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+  letter-spacing: 0.5px;
 }
 
 .user-table {

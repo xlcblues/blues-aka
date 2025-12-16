@@ -1,7 +1,6 @@
 import logging
 
-from flask import request
-from flask.sansio.blueprints import Blueprint
+from flask import Blueprint, request
 
 from blues_aka.common.exception import BusinessException
 from blues_aka.common.response import success
@@ -25,6 +24,7 @@ def login():
         password = data['password']
 
         user = User.query.filter_by(username=username).first()
+        logger.info("校验中")
         if not user:
             raise BusinessException(400, '找不到用户')
         if not user.checkPassword(password):
