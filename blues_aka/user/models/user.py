@@ -1,5 +1,7 @@
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import CITEXT
+from werkzeug.security import check_password_hash, generate_password_hash
+
 from blues_aka.extensions import db
 
 class User(db.Model):
@@ -43,5 +45,9 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+        self.password_changed_at = func.now()
+
     def checkPassword(self, password):
-        return self.password_hash and self.password_hash == password
+        return check_password_hash(self.password_hash, password)
