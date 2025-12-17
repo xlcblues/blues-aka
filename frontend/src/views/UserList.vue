@@ -3,10 +3,35 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <h1 class="page-title">🐱‍👤 用户管理</h1>
-      <el-button type="primary" @click="handleCreate" class="create-btn">
-        <el-icon><Plus /></el-icon>
-        新增用户
-      </el-button>
+      <div class="header-actions">
+        <el-dropdown @command="handleMenuCommand">
+          <el-button type="primary" class="user-menu-btn">
+            <el-icon><User /></el-icon>
+            {{ currentUser?.username || '用户' }}
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="profile">
+                <el-icon><User /></el-icon>
+                个人信息
+              </el-dropdown-item>
+              <el-dropdown-item command="settings">
+                <el-icon><Setting /></el-icon>
+                系统设置
+              </el-dropdown-item>
+              <el-dropdown-item divided command="logout">
+                <el-icon><SwitchButton /></el-icon>
+                退出登录
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button type="success" @click="handleCreate" class="create-btn">
+          <el-icon><Plus /></el-icon>
+          新增用户
+        </el-button>
+      </div>
     </div>
 
     <!-- 搜索和筛选区域 -->
@@ -207,12 +232,17 @@
 
 <script>
 import { ref, reactive, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '../api/user'
+import { useAuthStore } from '../stores/auth'
 
 export default {
   name: 'UserList',
   setup() {
+    const router = useRouter()
+    const authStore = useAuthStore()
+
     // 响应式数据
     const loading = ref(false)
     const submitting = ref(false)
@@ -220,6 +250,9 @@ export default {
     const dialogVisible = ref(false)
     const isEdit = ref(false)
     const userFormRef = ref(null)
+
+    // 当前用户
+    const currentUser = computed(() => authStore.currentUser)
 
     // 搜索表单
     const searchForm = reactive({
@@ -320,9 +353,13 @@ export default {
           const status = error.response.status
           if (status === 401) {
             errorMessage = '未授权访问，请重新登录'
-            // 可以在这里添加自动跳转到登录页的逻辑
+            // 清除本地登录状态并跳转到登录页
+            localStorage.removeItem('isLoggedIn')
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('refresh_token')
+            localStorage.removeItem('username')
             setTimeout(() => {
-              window.location.href = '/login'
+              router.push('/login')
             }, 2000)
           } else if (status === 403) {
             errorMessage = '权限不足，无法访问用户列表'
@@ -672,10 +709,51 @@ export default {
 
     // 组件挂载时获取数据和绑定事件
     onMounted(() => {
+      // 初始化认证状态
+      authStore.initializeAuth()
       fetchUsers()
       // 绑定键盘事件
       document.addEventListener('keydown', handleKeydown)
     })
+
+    // 处理用户菜单命令
+    const handleMenuCommand = (command) => {
+      switch (command) {
+        case 'profile':
+          router.push('/profile')
+          break
+        case 'settings':
+          router.push('/settings')
+          break
+        case 'logout':
+          handleLogout()
+          break
+      }
+    }
+
+    // 处理登出
+    const handleLogout = async () => {
+      try {
+        await ElMessageBox.confirm(
+          '确定要退出登录吗？',
+          '提示',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+
+        await authStore.logout()
+        ElMessage.success('退出登录成功！')
+        router.push('/login')
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('登出失败:', error)
+          ElMessage.error('登出失败，请重试')
+        }
+      }
+    }
 
     // 组件卸载时清理事件
     const cleanup = () => {
@@ -687,6 +765,7 @@ export default {
 
     return {
       // 响应式数据
+      currentUser,
       loading,
       submitting,
       userList,
@@ -711,6 +790,8 @@ export default {
       handleDelete,
       handleSubmit,
       handleDialogClose,
+      handleMenuCommand,
+      handleLogout,
       getStatusType,
       getStatusText,
       getStatusIcon,
@@ -742,8 +823,29 @@ export default {
   letter-spacing: 0.5px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.user-menu-btn {
+  background: linear-gradient(135deg, #5a67d8 0%, #4c51bf 100%);
+  border: none;
+  color: white;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.user-menu-btn:hover {
+  background: linear-gradient(135deg, #4c51bf 0%, #44337a 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(90, 103, 216, 0.4);
+}
+
 .create-btn {
-  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
   border: none;
   border-radius: 25px;
   padding: 12px 24px;

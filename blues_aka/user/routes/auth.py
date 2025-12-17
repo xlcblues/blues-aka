@@ -10,7 +10,7 @@ from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.extensions import db
 from blues_aka.user.models import User
-from blues_aka.user.schemas import userRegisterSchema, userLoginSchema
+from blues_aka.user.schemas import userRegisterSchema, userLoginSchema, userRegisterRespSchema
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -81,12 +81,14 @@ def register():
         if user:
             raise BusinessException(400, "用户名已存在")
 
-        user = User(username=username, email=email, password=password)
+        user = User(username=username, email=email)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
 
-        return success(user)
+        result = userRegisterRespSchema().dump(user)
+
+        return success(data=result, message='用户注册成功！')
 
 
     except ValidationError as e:

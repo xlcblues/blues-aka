@@ -1,6 +1,6 @@
 <template>
-  <div class="login-container">
-    <div class="login-card">
+  <div class="register-container">
+    <div class="register-card">
       <!-- 卡片头部装饰 -->
       <div class="card-header">
         <div class="floating-icons">
@@ -8,26 +8,26 @@
           <div class="icon cat">🐱‍👤</div>
           <div class="icon guitar">🎸</div>
         </div>
-        <h1 class="login-title">
+        <h1 class="register-title">
           <span class="title-icon">🐱‍👤</span>
-          欢迎回来
+          加入 Blues AKA
         </h1>
-        <p class="login-subtitle">Blues AKA 用户管理系统</p>
+        <p class="register-subtitle">创建您的账户，开始音乐之旅</p>
       </div>
 
-      <!-- 登录表单 -->
+      <!-- 注册表单 -->
       <el-form
-        ref="loginFormRef"
-        :model="loginForm"
-        :rules="loginRules"
-        class="login-form"
-        @submit.prevent="handleLogin"
+        ref="registerFormRef"
+        :model="registerForm"
+        :rules="registerRules"
+        class="register-form"
+        @submit.prevent="handleRegister"
       >
         <el-form-item prop="username">
           <div class="input-wrapper">
             <span class="input-icon">🐱</span>
             <el-input
-              v-model="loginForm.username"
+              v-model="registerForm.username"
               placeholder="请输入用户名"
               size="large"
               clearable
@@ -37,19 +37,49 @@
           </div>
         </el-form-item>
 
+        <el-form-item prop="email">
+          <div class="input-wrapper">
+            <span class="input-icon">📧</span>
+            <el-input
+              v-model="registerForm.email"
+              placeholder="请输入邮箱地址"
+              size="large"
+              clearable
+              class="custom-input"
+              autocomplete="email"
+            />
+          </div>
+        </el-form-item>
+
         <el-form-item prop="password">
           <div class="input-wrapper">
             <span class="input-icon">🔐</span>
             <el-input
-              v-model="loginForm.password"
+              v-model="registerForm.password"
               type="password"
               placeholder="请输入密码"
               size="large"
               show-password
               clearable
               class="custom-input"
-              autocomplete="current-password"
-              @keyup.enter="handleLogin"
+              autocomplete="new-password"
+            />
+          </div>
+        </el-form-item>
+
+        <el-form-item prop="confirmPassword">
+          <div class="input-wrapper">
+            <span class="input-icon">🔒</span>
+            <el-input
+              v-model="registerForm.confirmPassword"
+              type="password"
+              placeholder="请确认密码"
+              size="large"
+              show-password
+              clearable
+              class="custom-input"
+              autocomplete="new-password"
+              @keyup.enter="handleRegister"
             />
           </div>
         </el-form-item>
@@ -58,26 +88,26 @@
           <el-button
             type="primary"
             size="large"
-            class="login-btn"
+            class="register-btn"
             :loading="loading"
-            @click="handleLogin"
+            @click="handleRegister"
           >
             <span v-if="!loading" class="btn-content">
               <span class="btn-icon">🎸</span>
-              登录系统
+              创建账户
             </span>
             <span v-else class="btn-content">
               <span class="loading-icon">⏳</span>
-              登录中...
+              注册中...
             </span>
           </el-button>
         </el-form-item>
 
-        <!-- 注册链接 -->
-        <div class="register-link">
-          <span class="register-text">还没有账号？</span>
-          <router-link to="/register" class="register-btn">
-            立即注册 🎵
+        <!-- 登录链接 -->
+        <div class="login-link">
+          <span class="login-text">已有账号？</span>
+          <router-link to="/login" class="login-btn">
+            立即登录 🎵
           </router-link>
         </div>
       </el-form>
@@ -108,86 +138,109 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 
 export default {
-  name: 'Login',
+  name: 'Register',
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
-    const loginFormRef = ref(null)
+    const registerFormRef = ref(null)
     const loading = ref(false)
 
-    // 登录表单数据
-    const loginForm = reactive({
+    // 注册表单数据
+    const registerForm = reactive({
       username: '',
-      password: ''
+      email: '',
+      password: '',
+      confirmPassword: ''
     })
 
+    // 密码确认验证器
+    const validateConfirmPassword = (rule, value, callback) => {
+      if (value === '') {
+        callback(new Error('请再次输入密码'))
+      } else if (value !== registerForm.password) {
+        callback(new Error('两次输入密码不一致'))
+      } else {
+        callback()
+      }
+    }
+
+    // 邮箱格式验证器
+    const validateEmail = (rule, value, callback) => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (value === '') {
+        callback(new Error('请输入邮箱地址'))
+      } else if (!emailRegex.test(value)) {
+        callback(new Error('请输入正确的邮箱格式'))
+      } else {
+        callback()
+      }
+    }
+
     // 表单验证规则
-    const loginRules = {
+    const registerRules = {
       username: [
         { required: true, message: '请输入用户名', trigger: 'blur' },
-        { min: 3, max: 50, message: '用户名长度在 3 到 50 个字符', trigger: 'blur' }
+        { min: 3, max: 50, message: '用户名长度在 3 到 50 个字符', trigger: 'blur' },
+        { pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/, message: '用户名只能包含字母、数字、下划线和中文', trigger: 'blur' }
+      ],
+      email: [
+        { validator: validateEmail, trigger: 'blur' }
       ],
       password: [
         { required: true, message: '请输入密码', trigger: 'blur' },
-        { min: 6, message: '密码长度不能少于 6 位', trigger: 'blur' }
+        { min: 6, max: 128, message: '密码长度在 6 到 128 个字符', trigger: 'blur' },
+        { pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码必须包含至少一个字母和一个数字', trigger: 'blur' }
+      ],
+      confirmPassword: [
+        { validator: validateConfirmPassword, trigger: 'blur' }
       ]
     }
 
-    // 处理登录
-    const handleLogin = async () => {
-      if (!loginFormRef.value) return
+    // 处理注册
+    const handleRegister = async () => {
+      if (!registerFormRef.value) return
 
       try {
-        await loginFormRef.value.validate()
+        await registerFormRef.value.validate()
         loading.value = true
 
-        await authStore.login(loginForm)
+        await authStore.register({
+          username: registerForm.username,
+          email: registerForm.email,
+          password: registerForm.password
+        })
 
-        ElMessage.success('登录成功！🎵')
-        // 跳转到用户管理页面
-        router.push('/users')
+        ElMessage.success('注册成功！请登录 🎵')
+        // 跳转到登录页面
+        router.push('/login')
       } catch (error) {
-        console.error('登录失败:', error)
-        const errorMessage = error.response?.data?.message || error.message || '登录失败，请检查用户名和密码'
+        console.error('注册失败:', error)
+        const errorMessage = error.response?.data?.message || error.message || '注册失败，请重试'
         ElMessage.error(errorMessage)
       } finally {
         loading.value = false
       }
     }
 
-    // 检查是否已登录
-    const checkLoginStatus = () => {
-      // 初始化认证状态
-      authStore.initializeAuth()
-      if (authStore.isAuthenticated.value) {
-        router.push('/users')
-      }
-    }
-
-    // 组件挂载时检查登录状态
-    onMounted(() => {
-      checkLoginStatus()
-    })
-
     return {
-      loginFormRef,
+      registerFormRef,
       loading,
-      loginForm,
-      loginRules,
-      handleLogin
+      registerForm,
+      registerRules,
+      handleRegister
     }
   }
 }
 </script>
 
 <style scoped>
-.login-container {
+.register-container {
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -198,8 +251,8 @@ export default {
   padding: 20px;
 }
 
-/* 登录卡片 */
-.login-card {
+/* 注册卡片 */
+.register-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border-radius: 24px;
@@ -267,7 +320,7 @@ export default {
   }
 }
 
-.login-title {
+.register-title {
   font-size: 28px;
   font-weight: 700;
   color: #2d3748;
@@ -284,25 +337,25 @@ export default {
   filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.2));
 }
 
-.login-subtitle {
+.register-subtitle {
   color: #718096;
   font-size: 14px;
   margin: 0;
   font-weight: 500;
 }
 
-/* 登录表单 */
-.login-form {
+/* 注册表单 */
+.register-form {
   margin-bottom: 24px;
   width: 100%;
 }
 
-.login-form :deep(.el-form-item) {
+.register-form :deep(.el-form-item) {
   margin-bottom: 24px;
   width: 100%;
 }
 
-.login-form :deep(.el-form-item__content) {
+.register-form :deep(.el-form-item__content) {
   width: 100%;
 }
 
@@ -375,17 +428,17 @@ export default {
   color: #a0aec0;
 }
 
-/* 登录按钮 */
-.login-btn {
+/* 注册按钮 */
+.register-btn {
   width: 100%;
   height: 48px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
   border: none;
   font-size: 16px;
   font-weight: 600;
   color: white;
-  box-shadow: 0 8px 25px rgba(66, 153, 225, 0.4);
+  box-shadow: 0 8px 25px rgba(72, 187, 120, 0.4);
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -395,18 +448,18 @@ export default {
   justify-content: center;
 }
 
-.login-btn:hover {
+.register-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 12px 35px rgba(66, 153, 225, 0.6);
-  background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+  box-shadow: 0 12px 35px rgba(72, 187, 120, 0.6);
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
 }
 
-.login-btn:active {
+.register-btn:active {
   transform: translateY(0);
-  box-shadow: 0 4px 15px rgba(66, 153, 225, 0.4);
+  box-shadow: 0 4px 15px rgba(72, 187, 120, 0.4);
 }
 
-.login-btn::before {
+.register-btn::before {
   content: '';
   position: absolute;
   top: 0;
@@ -417,7 +470,7 @@ export default {
   transition: left 0.6s;
 }
 
-.login-btn:hover::before {
+.register-btn:hover::before {
   left: 100%;
 }
 
@@ -443,22 +496,22 @@ export default {
   to { transform: rotate(360deg); }
 }
 
-/* 注册链接 */
-.register-link {
+/* 登录链接 */
+.login-link {
   text-align: center;
   margin-top: 20px;
   padding: 16px 0;
-  border-top: 1px solid rgba(66, 153, 225, 0.15);
+  border-top: 1px solid rgba(72, 187, 120, 0.15);
 }
 
-.register-text {
+.login-text {
   color: #718096;
   font-size: 14px;
   margin-right: 8px;
 }
 
-.register-btn {
-  color: #4299e1;
+.login-btn {
+  color: #48bb78;
   text-decoration: none;
   font-weight: 600;
   font-size: 14px;
@@ -468,9 +521,9 @@ export default {
   display: inline-block;
 }
 
-.register-btn:hover {
-  background: rgba(66, 153, 225, 0.1);
-  color: #3182ce;
+.login-btn:hover {
+  background: rgba(72, 187, 120, 0.1);
+  color: #38a169;
   transform: translateY(-1px);
 }
 
@@ -609,13 +662,13 @@ export default {
 
 /* 响应式优化 */
 @media (max-width: 480px) {
-  .login-card {
+  .register-card {
     padding: 30px 20px;
     margin: 10px;
     min-width: auto;
   }
 
-  .login-title {
+  .register-title {
     font-size: 24px;
   }
 
@@ -648,7 +701,7 @@ export default {
 
 /* 高对比度模式支持 */
 @media (prefers-contrast: high) {
-  .login-card {
+  .register-card {
     border: 2px solid #2d3748;
   }
 
@@ -656,19 +709,19 @@ export default {
     border: 2px solid #2d3748;
   }
 
-  .login-btn {
+  .register-btn {
     border: 2px solid #2d3748;
   }
 }
 
 /* 深色模式支持 */
 @media (prefers-color-scheme: dark) {
-  .login-card {
+  .register-card {
     background: rgba(26, 32, 44, 0.95);
     color: white;
   }
 
-  .login-title {
+  .register-title {
     color: white;
   }
 

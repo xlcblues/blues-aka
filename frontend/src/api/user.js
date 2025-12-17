@@ -9,6 +9,10 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
   config => {
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
   error => {
@@ -23,6 +27,15 @@ api.interceptors.response.use(
   },
   error => {
     console.error('API Error:', error)
+
+    // 如果收到401响应，清除认证状态
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('isLoggedIn')
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('username')
+    }
+
     return Promise.reject(error)
   }
 )
@@ -58,5 +71,10 @@ export const authApi = {
   // 用户登出
   logout() {
     return api.post('/auth/logout')
+  },
+
+  // 用户注册
+  register(data) {
+    return api.post('/auth/register', data)
   }
 }

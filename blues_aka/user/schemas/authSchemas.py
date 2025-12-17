@@ -8,3 +8,8 @@ class userRegisterSchema(Schema):
     username = fields.String()
     password = fields.String()
     email = fields.String()
+
+class userRegisterRespSchema(Schema):
+    username = fields.String()
+    password = fields.String()
+    email = fields.String()
