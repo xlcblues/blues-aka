@@ -45,9 +45,29 @@ class User(db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
-    def set_password(self, password):
+    def set_password(self, password) -> bool:
+        if not self.is_strong_password(password):
+            raise ValueError("密码强度不足！")
         self.password_hash = generate_password_hash(password)
         self.password_changed_at = func.now()
+        return True
 
-    def checkPassword(self, password):
+    def checkPassword(self, password) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    @staticmethod
+    def is_strong_password(self, password) -> bool:
+        if password is None:
+            return False
+        elif len(password) < 8:
+            return False
+        has_letter = any(c.isalpha() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() for c in password)
+
+        conditions_met = sum([has_letter, has_digit, has_special])
+
+        if conditions_met < 2:
+            return False
+
+        return True

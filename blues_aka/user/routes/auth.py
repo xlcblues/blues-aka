@@ -90,7 +90,6 @@ def register():
 
         return success(data=result, message='用户注册成功！')
 
-
     except ValidationError as e:
         logger.warning(f"用户创建参数验证失败: {e.messages}")
         raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
@@ -107,3 +106,4 @@ def register():
         db.session.rollback()
         logger.error(f"用户创建失败: {str(e)}", exc_info=True)
         raise BusinessException(code=500, message="用户注册失败", error_code="USER_CREATION_FAILED")
+
