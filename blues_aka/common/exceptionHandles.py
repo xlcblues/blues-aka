@@ -3,11 +3,11 @@ from http.client import HTTPException
 
 from flask import jsonify
 
-from exception import BaseException
+from exception import BusinessException
 
 def register_error_handlers(app):
     """注册全局异常处理器"""
-    @app.errorhandler(BaseException)
+    @app.errorhandler(BusinessException)
     def handle_business_exception(error):
         # 错误日志
         app.logger.error(
