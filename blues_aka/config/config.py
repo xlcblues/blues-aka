@@ -34,6 +34,52 @@ class BaseConfig(BaseSettings):
     # CORS配置
     CORS_ORIGINS: List[str] = []
 
+    # 默认模型配置
+    default_api_key: str= Field(
+        default="",
+        description="模型默认api必须设置"
+    )
+
+    default_api_base: str = Field(
+        default="",
+        description="模型默认url"
+    )
+
+    default_model: str = Field(
+        default="",
+        description="默认使用的LLM大模型"
+    )
+
+    default_temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        description="默认模型温度，调整模型输出内容的随机性"
+    )
+
+    default_max_token: Optional[int] = Field(
+        default=None,
+        description="模型默认最大token数"
+    )
+
+    default_streaming: bool = Field(
+        default=True,
+        description="是否支持流式输出"
+    )
+
+    # 默认Agent设置
+    agent_max_iterations: int = Field(
+        default=15,
+        ge=1,
+        le=100,
+        description="Agent最大迭代次数"
+    )
+
+    agent_max_execution_time: Optional[float] = Field(
+        default=None,
+        description="Agent最大执行时间"
+    )
+
     class Config:
         env_file = ".env"
         case_sensitive = True

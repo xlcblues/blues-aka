@@ -4,7 +4,7 @@ from flask import Flask
 
 from blues_aka.blueprints import init_blueprints
 from blues_aka.config import config
-from .core.config import ConfigFactory
+from .config.config import ConfigFactory
 from .extensions import init_extensions
 from .jwt import init_jwt
 from .logger import init_logger
