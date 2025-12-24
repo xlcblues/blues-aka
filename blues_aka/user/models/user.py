@@ -52,7 +52,7 @@ class User(db.Model):
         self.password_changed_at = func.now()
         return True
 
-    def checkPassword(self, password) -> bool:
+    def check_password(self, password) -> bool:
         return check_password_hash(self.password_hash, password)
 
     @staticmethod

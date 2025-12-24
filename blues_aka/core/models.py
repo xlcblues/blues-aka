@@ -8,7 +8,7 @@ from blues_aka.config import BaseConfig
 logger = logging.getLogger(__name__)
 
 # 获取聊天模型
-def getChatModel(
+def get_chat_model(
         model_name: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
@@ -42,19 +42,19 @@ def getChatModel(
         logger.error(f"模型创建失败: {e}")
         raise
 
-def getStreamingModel(
+def get_streaming_model(
         model_name: Optional[str] = None,
         temperature: Optional[float] = None,
         **kwargs: Any
 ) -> BaseChatModel:
-    return getChatModel(model_name=model_name, temperature=temperature, streaming=True, **kwargs)
+    return get_chat_model(model_name=model_name, temperature=temperature, streaming=True, **kwargs)
 
 def getStructuredOutputModel(
         model_name: Optional[str] = None,
         temperature: float = 0.0,
         **kwargs: Any
 ) -> BaseChatModel:
-    return getChatModel(model_name=model_name, temperature=temperature, streaming=False, **kwargs)
+    return get_chat_model(model_name=model_name, temperature=temperature, streaming=False, **kwargs)
 
 # 预定义的模型配置
 MODEL_CONFIGS = {
@@ -85,16 +85,16 @@ MODEL_CONFIGS = {
     },
 }
 
-def getModelByPreset(preset: str = "default", **kwargs: Any) -> BaseChatModel:
+def get_model_by_preset(preset: str = "default", **kwargs: Any) -> BaseChatModel:
     if preset not in MODEL_CONFIGS:
         available_models = MODEL_CONFIGS.values()
         raise ValueError(f"未知的预设: {preset}. 可用预设: {available_models}")
 
     config = MODEL_CONFIGS[preset].copy()
     config.pop("description", None)
-    return getChatModel(**config)
+    return get_chat_model(**config)
 
-def getModelString(
+def get_model_string(
         model_name: Optional[str] = None,
         provider: str = "ZhiPuAI"
 ) -> str:
