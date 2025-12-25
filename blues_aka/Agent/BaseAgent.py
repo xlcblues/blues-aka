@@ -1,10 +1,11 @@
 import logging
-from typing import Optional, Union, Sequence, Any, List, Iterator
+from typing import Optional, Union, Sequence, Any, List, Iterator, Literal, AsyncIterator
 
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import BaseTool
+from langgraph.types import Command
 
 from blues_aka.config import BaseConfig
 from blues_aka.core.prompts import get_prompt_with_tools, get_system_prompt
@@ -109,7 +110,10 @@ class BaseAgent:
             self,
             input_text: str,
             chat_history: Optional[List[BaseMessage]] = None,
-            stream_mode: str = "messages",
+            stream_mode: Union[
+                Literal["values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"],
+                Sequence[Literal["values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"]]
+            ] = "messages",
             **kwargs: Any
     ) -> Iterator[str]:
         try:
@@ -121,8 +125,9 @@ class BaseAgent:
             messages.append(HumanMessage(content=input_text))
             graph_input = {"messages": messages}
             graph_input.update(kwargs)
+            command_input = Command(update=graph_input)
 
-            for chunk in self.graph.stream(input=graph_input, stream_mode=stream_mode):
+            for chunk in self.graph.stream(input=command_input, stream_mode=stream_mode):
                 if stream_mode == "messages":
                     if isinstance(chunk, tuple) and len(chunk) == 2:
                         message, metadata = chunk
@@ -147,6 +152,99 @@ class BaseAgent:
             error_msg = f"Agent 流式执行失败: {str(e)}"
             logger.error(f"{error_msg}")
             yield f"\n\n抱歉，处理您的请求时出现错误: {str(e)}"
+
+    async def ainvoke(
+            self,
+            input_text: str,
+            chat_history: Optional[List[BaseMessage]] = None,
+            config: Optional[dict[str, Any]] = None,
+            **kwargs: Any
+    ) -> str:
+        try:
+            messages = []
+            if chat_history:
+                messages.extend(chat_history)
+            messages.append(HumanMessage(content=input_text))
+
+            graph_input = {"messages": messages}
+            graph_input.update(kwargs)
+            command_input = Command(update=graph_input)
+            result = await self.graph.ainvoke(command_input, config=config)
+
+            output_messages = result.get("messages", [])
+            ai_response = ""
+            for msg in reversed(output_messages):
+                if isinstance(msg, AIMessage):
+                    ai_response = msg.content
+                    break
+
+            logger.info("异步调用成功")
+            return ai_response
+
+
+        except Exception as e:
+            error_msg = f"Agent 异步执行失败: {str(e)}"
+            logger.error(f"{error_msg}")
+            return f"抱歉，处理您的请求时出现错误: {str(e)}"
+
+    async def astreaming(
+            self,
+            input_text: str,
+            chat_history: Optional[List[BaseMessage]] = None,
+            stream_mode: Union[
+                Literal["values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"],
+                Sequence[Literal["values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"]]
+            ] = "messages",
+            **kwargs: Any
+    ) -> AsyncIterator[str]:
+        try:
+            messages = []
+            if chat_history:
+                messages.extend(chat_history)
+            messages.append(HumanMessage(content=input_text))
+            graph_input = {"messages": messages}
+            graph_input.update(kwargs)
+            command_input = Command(update=graph_input)
+
+            for chunk in self.graph.astream(input=command_input, stream_mode=stream_mode):
+                if stream_mode == "messages":
+                    if isinstance(chunk, tuple) and len(chunk) == 2:
+                        message, metadata = chunk
+                        if isinstance(message, AIMessage) and message.content:
+                            yield message.content
+                    elif isinstance(chunk, AIMessage) and chunk.content:
+                        yield chunk.content
+                elif stream_mode == "updates":
+                    if isinstance(chunk, dict) and "message" in chunk:
+                        message_update = chunk["message"]
+                        if message_update:
+                            last_msg = message_update[-1]
+                            if isinstance(last_msg, AIMessage) and last_msg.content:
+                                yield last_msg.content
+
+            logger.info("✅ Agent 异步流式调用完成")
+
+        except Exception as e:
+            error_msg = f"Agent 异步流式执行失败: {str(e)}"
+            logger.error(f"{error_msg}")
+            yield f"\n\n抱歉，处理您的请求时出现错误: {str(e)}"
+
+# 创建智能体
+def create_base_agent(
+        model: Optional[Union[str, BaseChatModel]] = None,
+        tools: Optional[Sequence[BaseTool]] = None,
+        prompt_mode: str = "default",
+        debug: bool = False,
+        **kwargs: Any
+) -> BaseAgent:
+    logger.info("正在建立智能体")
+    return BaseAgent(
+        model=model,
+        tools=tools,
+        prompt_mode=prompt_mode,
+        debug=debug,
+        **kwargs,
+    )
 
 
 
