@@ -222,7 +222,7 @@ class BaseAgent:
                             if isinstance(last_msg, AIMessage) and last_msg.content:
                                 yield last_msg.content
 
-            logger.info("✅ Agent 异步流式调用完成")
+            logger.info("Agent 异步流式调用完成")
 
         except Exception as e:
             error_msg = f"Agent 异步流式执行失败: {str(e)}"

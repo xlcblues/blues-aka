@@ -31,7 +31,7 @@ def login():
 
         if not user:
             raise BusinessException(400, '找不到用户')
-        if not user.checkPassword(password):
+        if not user.check_password(password):
             raise BusinessException(401, '用户名或密码错误')
 
         access_token = create_access_token(identity=username)

@@ -4,11 +4,14 @@ import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
 import Profile from '../views/Profile.vue'
 import Settings from '../views/Settings.vue'
+import AgentList from '../views/AgentList.vue'
+import ConversationList from '../views/ConversationList.vue'
+import Chat from '../views/Chat.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/login'
+    redirect: '/conversations'
   },
   {
     path: '/login',
@@ -39,6 +42,24 @@ const routes = [
     name: 'Settings',
     component: Settings,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/agents',
+    name: 'AgentList',
+    component: AgentList,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/conversations',
+    name: 'ConversationList',
+    component: ConversationList,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/chat',
+    name: 'Chat',
+    component: Chat,
+    meta: { requiresAuth: true }
   }
 ]
 
@@ -59,13 +80,13 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth && !isAuthenticated) {
     next('/login')
   }
-  // 如果已登录，访问登录或注册页面则重定向到用户管理页面
+  // 如果已登录，访问登录或注册页面则重定向到对话列表
   else if ((to.path === '/login' || to.path === '/register') && isAuthenticated) {
-    next('/users')
+    next('/conversations')
   }
   // 如果访问根路径，根据认证状态重定向
   else if (to.path === '/') {
-    next(isAuthenticated ? '/users' : '/login')
+    next(isAuthenticated ? '/conversations' : '/login')
   }
   else {
     next()

@@ -1,0 +1,30 @@
+from marshmallow import Schema, fields, validate, validates, ValidationError
+
+class CreateAgentSchema(Schema):
+    name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
+    description = fields.Str(validate=validate.Length(max=1000))
+    avatar = fields.Str(validate=validate.URL())
+    model = fields.Str(missing='gpt-4')
+    system_prompt = fields.Str(validate=validate.Length(max=10000))
+    prompt_mode = fields.Str(missing='default', validate=validate.OneOf(['default', 'coding', 'creative']))
+    tools = fields.List(fields.Str())
+    temperature = fields.Float(missing=0.7, validate=validate.Range(min=0, max=2))
+    max_tokens = fields.Int(missing=2000, validate=validate.Range(min=1, max=32000))
+    top_p = fields.Float(missing=1.0, validate=validate.Range(min=0, max=1))
+    is_public = fields.Bool(missing=False)
+    config = fields.Dict()
+
+class UpdateAgentSchema(Schema):
+    name = fields.Str(validate=validate.Length(min=1, max=100))
+    description = fields.Str(validate=validate.Length(max=1000))
+    avatar = fields.Str(validate=validate.URL())
+    model = fields.Str()
+    system_prompt = fields.Str(validate=validate.Length(max=10000))
+    prompt_mode = fields.Str(validate=validate.OneOf(['default', 'coding', 'creative']))
+    tools = fields.List(fields.Str())
+    temperature = fields.Float(validate=validate.Range(min=0, max=2))
+    max_tokens = fields.Int(validate=validate.Range(min=1, max=32000))
+    top_p = fields.Float(validate=validate.Range(min=0, max=1))
+    is_public = fields.Bool()
+    is_active = fields.Bool()
+    config = fields.Dict()

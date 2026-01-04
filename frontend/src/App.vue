@@ -12,12 +12,25 @@
         <div class="header-content">
           <h1 class="logo">
             <span class="logo-icon">🐱‍👤</span>
-            <span class="logo-text">Blues AKA 用户管理系统</span>
+            <span class="logo-text">Blues AKA 智能对话系统</span>
             <span class="logo-music">🎵</span>
           </h1>
           <div class="header-nav">
             <el-button
-              type="primary"
+              @click="$router.push('/conversations')"
+              :class="{ 'active-btn': $route.name === 'ConversationList' || $route.name === 'Chat' }"
+            >
+              <el-icon><ChatDotRound /></el-icon>
+              对话
+            </el-button>
+            <el-button
+              @click="$router.push('/agents')"
+              :class="{ 'active-btn': $route.name === 'AgentList' }"
+            >
+              <el-icon><Avatar /></el-icon>
+              智能体
+            </el-button>
+            <el-button
               @click="$router.push('/users')"
               :class="{ 'active-btn': $route.name === 'UserList' }"
             >
@@ -234,9 +247,10 @@ body {
 }
 
 .main-content {
-  padding: 20px;
-  max-width: 1200px;
+  padding: 30px;
+  max-width: 1600px;
   margin: 0 auto;
+  min-height: calc(100vh - 100px);
 }
 
 .content-wrapper {
@@ -256,7 +270,7 @@ body {
 
 /* 头部导航样式增强 */
 .logo {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -386,12 +400,13 @@ body {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   border-radius: 16px;
-  padding: 24px;
+  padding: 32px;
   box-shadow: 0 8px 32px rgba(49, 130, 206, 0.15);
   border: 1px solid rgba(66, 153, 225, 0.3);
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   position: relative;
   overflow: hidden;
+  min-height: 600px;
 }
 
 .page-container::before {
@@ -408,15 +423,18 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
   border-bottom: 1px solid #ebeef5;
 }
 
 .page-title {
-  font-size: 20px;
+  font-size: 28px;
   font-weight: 600;
   color: #303133;
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 </style>
