@@ -3,7 +3,7 @@ from marshmallow import Schema, fields, validate, validates, ValidationError
 class CreateAgentSchema(Schema):
     name = fields.Str(required=True, validate=validate.Length(min=1, max=100))
     description = fields.Str(validate=validate.Length(max=1000))
-    avatar = fields.Str(validate=validate.URL())
+    avatar = fields.Str(allow_none=True, allow_blank=True)  # 允许空值和空字符串
     model = fields.Str(missing='gpt-4')
     system_prompt = fields.Str(validate=validate.Length(max=10000))
     prompt_mode = fields.Str(missing='default', validate=validate.OneOf(['default', 'coding', 'creative']))
@@ -17,7 +17,7 @@ class CreateAgentSchema(Schema):
 class UpdateAgentSchema(Schema):
     name = fields.Str(validate=validate.Length(min=1, max=100))
     description = fields.Str(validate=validate.Length(max=1000))
-    avatar = fields.Str(validate=validate.URL())
+    avatar = fields.Str(allow_none=True, allow_blank=True)  # 允许空值和空字符串
     model = fields.Str()
     system_prompt = fields.Str(validate=validate.Length(max=10000))
     prompt_mode = fields.Str(validate=validate.OneOf(['default', 'coding', 'creative']))

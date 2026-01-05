@@ -30,12 +30,13 @@ def login():
         logger.info("校验中")
 
         if not user:
-            raise BusinessException(400, '找不到用户')
+            raise BusinessException(400, '找不到用户', 'USER_NOT_FOUND')
         if not user.check_password(password):
-            raise BusinessException(401, '用户名或密码错误')
+            raise BusinessException(401, '用户名或密码错误', 'INVALID_CREDENTIALS')
 
-        access_token = create_access_token(identity=username)
-        refresh_token = create_refresh_token(identity=username)
+        # 使用 user.id 作为 JWT identity
+        access_token = create_access_token(identity=user.id)
+        refresh_token = create_refresh_token(identity=user.id)
 
         data = {
             'access_token': access_token,
@@ -56,10 +57,10 @@ def login():
 @handle_api_response
 def logout():
     try:
-        current_username = get_jwt_identity()
+        current_user_id = get_jwt_identity()
         db.session.commit()
         logger.info("登出成功！")
-        return success(current_username)
+        return success({'user_id': current_user_id})
 
     except BusinessException as e:
         raise e
@@ -79,7 +80,7 @@ def register():
 
         user = User.query.filter_by(username=username).first()
         if user:
-            raise BusinessException(400, "用户名已存在")
+            raise BusinessException(400, "用户名已存在", "USERNAME_EXISTS")
 
         user = User(username=username, email=email)
         user.set_password(password)

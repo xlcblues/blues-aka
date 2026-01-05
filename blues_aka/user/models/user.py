@@ -46,7 +46,7 @@ class User(db.Model):
         return f'<User {self.username}>'
 
     def set_password(self, password) -> bool:
-        if not self.is_strong_password(password):
+        if not User.is_strong_password(password):
             raise ValueError("密码强度不足！")
         self.password_hash = generate_password_hash(password)
         self.password_changed_at = func.now()
@@ -56,7 +56,7 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     @staticmethod
-    def is_strong_password(self, password) -> bool:
+    def is_strong_password(password) -> bool:
         if password is None:
             return False
         elif len(password) < 8:

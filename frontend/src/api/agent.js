@@ -45,27 +45,27 @@ api.interceptors.response.use(
 export const agentApi = {
   // 获取智能体列表
   getAgents(params) {
-    return api.get('/api/v1/agents', { params })
+    return api.get('/agent/agents', { params })
   },
 
   // 获取智能体详情
   getAgent(agentId) {
-    return api.get(`/api/v1/agents/${agentId}`)
+    return api.get(`/agent/agents/${agentId}`)
   },
 
   // 创建智能体
   createAgent(data) {
-    return api.post('/api/v1/agents', data)
+    return api.post('/agent/agents', data)
   },
 
   // 更新智能体
   updateAgent(agentId, data) {
-    return api.put(`/api/v1/agents/${agentId}`, data)
+    return api.put(`/agent/agents/${agentId}`, data)
   },
 
   // 删除智能体
   deleteAgent(agentId) {
-    return api.delete(`/api/v1/agents/${agentId}`)
+    return api.delete(`/agent/agents/${agentId}`)
   }
 }
 
@@ -73,32 +73,32 @@ export const agentApi = {
 export const conversationApi = {
   // 获取对话列表
   getConversations(params) {
-    return api.get('/api/v1/conversations', { params })
+    return api.get('/conversations', { params })
   },
 
   // 获取对话详情
   getConversation(conversationId) {
-    return api.get(`/api/v1/conversations/${conversationId}`)
+    return api.get(`/conversations/${conversationId}`)
   },
 
   // 创建对话
   createConversation(data) {
-    return api.post('/api/v1/conversations', data)
+    return api.post('/conversations', data)
   },
 
   // 更新对话
   updateConversation(conversationId, data) {
-    return api.put(`/api/v1/conversations/${conversationId}`, data)
+    return api.put(`/conversations/${conversationId}`, data)
   },
 
   // 删除对话
   deleteConversation(conversationId) {
-    return api.delete(`/api/v1/conversations/${conversationId}`)
+    return api.delete(`/conversations/${conversationId}`)
   },
 
   // 归档对话
   archiveConversation(conversationId) {
-    return api.patch(`/api/v1/conversations/${conversationId}/archive`)
+    return api.patch(`/conversations/${conversationId}/archive`)
   }
 }
 
@@ -106,22 +106,22 @@ export const conversationApi = {
 export const chatApi = {
   // 发送消息
   chat(conversationId, data) {
-    return api.post(`/api/v1/conversations/${conversationId}/chat`, data)
+    return api.post(`/conversations/${conversationId}/chat`, data)
   },
 
   // 获取消息历史
   getMessages(conversationId, params) {
-    return api.get(`/api/v1/conversations/${conversationId}/messages`, { params })
+    return api.get(`/conversations/${conversationId}/messages`, { params })
   },
 
   // 消息反馈
   messageFeedback(messageId, data) {
-    return api.post(`/api/v1/messages/${messageId}/feedback`, data)
+    return api.post(`/messages/${messageId}/feedback`, data)
   },
 
   // 重新生成消息
   regenerateMessage(conversationId, data) {
-    return api.post(`/api/v1/conversations/${conversationId}/regenerate`, data)
+    return api.post(`/conversations/${conversationId}/regenerate`, data)
   }
 }
 
@@ -129,7 +129,7 @@ export const chatApi = {
 export const statsApi = {
   // 获取用户统计
   getUserStats() {
-    return api.get('/api/v1/users/me/stats')
+    return api.get('/users/me/stats')
   }
 }
 

@@ -17,13 +17,6 @@
           </h1>
           <div class="header-nav">
             <el-button
-              @click="$router.push('/conversations')"
-              :class="{ 'active-btn': $route.name === 'ConversationList' || $route.name === 'Chat' }"
-            >
-              <el-icon><ChatDotRound /></el-icon>
-              对话
-            </el-button>
-            <el-button
               @click="$router.push('/agents')"
               :class="{ 'active-btn': $route.name === 'AgentList' }"
             >

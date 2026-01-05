@@ -1,6 +1,8 @@
 from functools import wraps
+from flask import jsonify
 
 from blues_aka.common.response import create_response, success
+from blues_aka.common.exception import BusinessException
 
 
 def handle_api_response(f):
@@ -26,7 +28,7 @@ def handle_api_response(f):
             # 如果返回的是元组 (response, status)
             if isinstance(result, tuple) and len(result) == 2:
                 data, status = result
-                create_response(data=data, status=status)
+                return create_response(data=data, status=status)
 
             # 如果已经是Flask响应对象，直接返回
             if hasattr(result, 'status_code'):
@@ -35,11 +37,25 @@ def handle_api_response(f):
             # 否则包装为成功响应
             return success(data=result)
 
-        except BaseException as e:
-            raise e
+        except BusinessException as e:
+            # 捕获业务异常并转换为JSON响应
+            response = jsonify({
+                'code': e.code,
+                'message': e.message,
+                'error_code': e.error_code
+            })
+            response.status_code = e.code
+            return response
 
         except Exception as e:
-            raise e
+            # 捕获其他未处理的异常
+            response = jsonify({
+                'code': 500,
+                'message': str(e),
+                'error_code': 'INTERNAL_SERVER_ERROR'
+            })
+            response.status_code = 500
+            return response
 
     return wrapper
 

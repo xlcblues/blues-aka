@@ -44,7 +44,7 @@ class Agent(db.Model):
 
     # 关系
     user = db.relationship('User', backref=db.backref('agents', lazy='dynamic', cascade='all, delete-orphan'))
-    conversations = db.relationship('Conversation', backref=db.backref('agent', lazy='joined'), cascade='all, delete-orphan')
+    # conversations = db.relationship('Conversation', backref=db.backref('agent', lazy='joined'), cascade='all, delete-orphan')  # TODO: 待 Conversation 模型实现后启用
 
     def __repr__(self):
         return f'<Agent {self.name}>'

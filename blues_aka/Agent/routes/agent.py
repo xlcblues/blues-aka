@@ -66,15 +66,17 @@ def get_agent():
     try:
         user_id = get_jwt_identity()
         page = request.args.get('page', 1, type=int)
-        page_size = request.args.get('page_size', 20, type=int)
+        page_size = request.args.get('size', 20, type=int)  # 前端发送的是 'size'
         is_public = request.args.get('is_public', type=bool)
 
         query = Agent.query
 
         if is_public:
-            query = query.filter_by(Agent.is_public == True | Agent.user_id == user_id)
+            # 查询公开的智能体或自己的智能体
+            query = query.filter((Agent.is_public == True) | (Agent.user_id == user_id))
         else:
-            query = query.filter_by(Agent.user_id == user_id)
+            # 只查询自己的智能体
+            query = query.filter(Agent.user_id == user_id)
 
         pagination = query.order_by(Agent.created_at.desc()).paginate(page=page, per_page=page_size, error_out=False)
 
@@ -94,12 +96,13 @@ def get_agent():
 
     except Exception as e:
         # 其他异常
+        logger.error(f"查询智能体失败: {str(e)}", exc_info=True)
         raise BusinessException(code=500, message="查询智能体失败", error_code="AGENT_QUERY_FAILED")
 
 @agent_bp.route('/agents/<int:agent_id>', methods=['GET'])
 @jwt_required()
 @handle_api_response
-def get_agent(agent_id):
+def get_agent_detail(agent_id):
     """查看智能体详情"""
     try:
         user_id = get_jwt_identity()

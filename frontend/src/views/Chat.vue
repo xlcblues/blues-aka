@@ -299,7 +299,7 @@ const sendMessageStream = async (content) => {
 
     const token = localStorage.getItem('access_token')
 
-    const response = await fetch(`/api/v1/conversations/${conversationId.value}/chat`, {
+    const response = await fetch(`/conversations/${conversationId.value}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -430,7 +430,7 @@ const regenerateMessage = async (message) => {
 
     const token = localStorage.getItem('access_token')
 
-    const response = await fetch(`/api/v1/conversations/${conversationId.value}/regenerate`, {
+    const response = await fetch(`/conversations/${conversationId.value}/regenerate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

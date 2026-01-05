@@ -11,7 +11,7 @@ import Chat from '../views/Chat.vue'
 const routes = [
   {
     path: '/',
-    redirect: '/conversations'
+    redirect: '/agents'
   },
   {
     path: '/login',
@@ -80,13 +80,13 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth && !isAuthenticated) {
     next('/login')
   }
-  // 如果已登录，访问登录或注册页面则重定向到对话列表
+  // 如果已登录，访问登录或注册页面则重定向到智能体列表
   else if ((to.path === '/login' || to.path === '/register') && isAuthenticated) {
-    next('/conversations')
+    next('/agents')
   }
   // 如果访问根路径，根据认证状态重定向
   else if (to.path === '/') {
-    next(isAuthenticated ? '/conversations' : '/login')
+    next(isAuthenticated ? '/agents' : '/login')
   }
   else {
     next()
