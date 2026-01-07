@@ -36,17 +36,17 @@ class BaseConfig(BaseSettings):
 
     # 默认模型配置
     default_api_key: str= Field(
-        default="",
+        default="ce30f3c193c24c3da68379db833f58df.pkxCtmhdKeME4PZB",
         description="模型默认api必须设置"
     )
 
     default_api_base: str = Field(
-        default="",
+        default="https://open.bigmodel.cn/api/paas/v4",
         description="模型默认url"
     )
 
     default_model: str = Field(
-        default="",
+        default="glm-4.5",
         description="默认使用的LLM大模型"
     )
 

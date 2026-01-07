@@ -7,11 +7,15 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
 
-from blues_aka.config import BaseConfig
+from blues_aka.config.config import ConfigFactory
 from blues_aka.core.prompts import get_prompt_with_tools, get_system_prompt
 from blues_aka.core.tools import BASIC_TOOLS
+from blues_aka.core.models import get_chat_model
 
 logger = logging.getLogger(__name__)
+
+# 获取配置实例
+_config = ConfigFactory.get_config()
 
 class BaseAgent:
     def __init__(
@@ -23,13 +27,26 @@ class BaseAgent:
             debug: bool = False,
             **kwargs: Any):
 
-        # 初始化模型
+        # 初始化模型 - 将字符串转换为模型实例
         if model is None:
-            self.model = f"default:{BaseConfig.default_model}"
+            # 使用默认模型
+            self.model = get_chat_model(model_name=_config.default_model)
+            logger.info(f"使用默认模型: {_config.default_model}")
         elif isinstance(model, str):
-            self.model = model
+            # 如果是字符串，创建模型实例
+            # 检查是否已经有提供商前缀 (如 "zhipuai:glm-4.5")
+            if ':' in model:
+                # 有前缀，直接使用
+                self.model = get_chat_model(model_name=model.split(':', 1)[1])
+                logger.info(f"使用模型（带前缀）: {model}")
+            else:
+                # 没有前缀，使用模型名称
+                self.model = get_chat_model(model_name=model)
+                logger.info(f"使用模型: {model}")
         else:
+            # 已经是模型实例，直接使用
             self.model = model
+            logger.info("使用传入的模型实例")
 
         # 初始化工具
         if tools is None:

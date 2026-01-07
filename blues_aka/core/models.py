@@ -3,9 +3,12 @@ from typing import Optional, Any, Dict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_community.chat_models import ChatZhipuAI
-from blues_aka.config import BaseConfig
+from blues_aka.config.config import ConfigFactory
 
 logger = logging.getLogger(__name__)
+
+# 获取配置实例
+_config = ConfigFactory.get_config()
 
 # 获取聊天模型
 def get_chat_model(
@@ -16,22 +19,22 @@ def get_chat_model(
         **kwargs: Any
 ) -> BaseChatModel:
 
-    model_name = model_name or BaseConfig.default_model
-    temperature = temperature or BaseConfig.default_temperature
-    streaming = streaming or BaseConfig.default_streaming
+    model_name = model_name or _config.default_model
+    temperature = temperature if temperature is not None else _config.default_temperature
+    streaming = streaming if streaming is not None else _config.default_streaming
 
     model_config: Dict[str, Any] = {
         'model_name': model_name,
         'temperature': temperature,
         'streaming': streaming,
-        'api-key': BaseConfig.default_api_key,
-        'base-url': BaseConfig.default_api_base
+        'api_key': _config.default_api_key,
+        'base_url': _config.default_api_base
     }
 
     if max_tokens is not None:
         model_config['max_tokens'] = max_tokens
-    elif BaseConfig.default_max_token is not None:
-        model_config['max_tokens'] = BaseConfig.default_max_token
+    elif _config.default_max_token is not None:
+        model_config['max_tokens'] = _config.default_max_token
 
     model_config.update(kwargs)
 
@@ -98,7 +101,7 @@ def get_model_string(
         model_name: Optional[str] = None,
         provider: str = "ZhiPuAI"
 ) -> str:
-    model_name = model_name or BaseConfig.default_model
+    model_name = model_name or _config.default_model
     model_string = f"{provider} : {model_name}"
     logger.info(model_string)
     return model_string

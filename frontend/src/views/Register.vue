@@ -194,8 +194,12 @@ export default {
       ],
       password: [
         { required: true, message: '请输入密码', trigger: 'blur' },
-        { min: 6, max: 128, message: '密码长度在 6 到 128 个字符', trigger: 'blur' },
-        { pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码必须包含至少一个字母和一个数字', trigger: 'blur' }
+        { min: 8, max: 128, message: '密码长度至少8位，最多128个字符', trigger: 'blur' },
+        {
+          pattern: /^(?=.*[a-zA-Z])(?=.*\d)/,
+          message: '密码必须包含至少一个字母和一个数字',
+          trigger: 'blur'
+        }
       ],
       confirmPassword: [
         { validator: validateConfirmPassword, trigger: 'blur' }

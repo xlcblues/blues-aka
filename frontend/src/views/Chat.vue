@@ -255,12 +255,14 @@ const fetchMessages = async () => {
 
   try {
     loading.value = true
-    const response = await chatApi.getMessages(conversationId.value, { page: 1, size: 100 })
+    const response = await chatApi.getMessages(conversationId.value)
 
-    if (response.code === 200) {
-      messages.value = response.data.items
+    if (response.code === 200 || response.status === 'success') {
+      messages.value = response.data || []
       await nextTick()
       scrollToBottom()
+    } else {
+      ElMessage.error(response.message || '获取消息历史失败')
     }
   } catch (error) {
     console.error('获取消息历史失败:', error)
@@ -298,8 +300,9 @@ const sendMessageStream = async (content) => {
     streamingContent.value = ''
 
     const token = localStorage.getItem('access_token')
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
 
-    const response = await fetch(`/conversations/${conversationId.value}/chat`, {
+    const response = await fetch(`${apiBaseUrl}/chat/conversations/${conversationId.value}/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -429,8 +432,9 @@ const regenerateMessage = async (message) => {
     }
 
     const token = localStorage.getItem('access_token')
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
 
-    const response = await fetch(`/conversations/${conversationId.value}/regenerate`, {
+    const response = await fetch(`${apiBaseUrl}/chat/conversations/${conversationId.value}/regenerate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -689,14 +693,16 @@ onMounted(async () => {
 .messages-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  max-width: 1400px;
+  gap: 24px;
+  max-width: 1200px;
   margin: 0 auto;
+  padding: 0 16px;
 }
 
 .message-item {
   display: flex;
-  gap: 20px;
+  gap: 12px;
+  width: 100%;
   animation: fadeInUp 0.3s ease;
 }
 
@@ -713,49 +719,55 @@ onMounted(async () => {
 
 .message-item.user {
   flex-direction: row-reverse;
+  justify-content: flex-start;
 }
 
 .user-message {
   display: flex;
-  gap: 20px;
-  max-width: 80%;
-  flex-direction: row-reverse;
+  gap: 12px;
+  max-width: 70%;
   margin-left: auto;
+  align-items: flex-end;
 }
 
 .user-message .message-content {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  border-radius: 18px 18px 6px 18px;
-  padding: 20px 28px;
+  border-radius: 20px 20px 4px 20px;
+  padding: 16px 24px;
   box-shadow: 0 4px 16px rgba(102, 126, 234, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .user-message .message-text {
   color: white;
   word-break: break-word;
   white-space: pre-wrap;
-  font-size: 16px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .user-message .message-time {
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 13px;
-  margin-top: 10px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  text-align: right;
 }
 
 .assistant-message {
   display: flex;
-  gap: 20px;
-  max-width: 85%;
+  gap: 12px;
+  max-width: 75%;
+  align-items: flex-start;
 }
 
 .assistant-message .message-content {
   background: white;
-  border-radius: 18px 18px 18px 6px;
-  padding: 20px 28px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  border-radius: 20px 20px 20px 4px;
+  padding: 16px 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e8e8e8;
 }
 
 .assistant-message .message-text {
@@ -768,14 +780,17 @@ onMounted(async () => {
 
 .assistant-message .message-meta {
   display: flex;
-  gap: 16px;
-  margin-top: 16px;
-  font-size: 13px;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 12px;
   color: #909399;
+  align-items: center;
 }
 
 .assistant-message .message-actions {
-  margin-top: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .streaming {

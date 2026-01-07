@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // 创建 axios 实例
 const api = axios.create({
-  baseURL: '',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
   timeout: 30000 // 聊天接口需要更长的超时时间
 })
 
@@ -35,6 +35,14 @@ api.interceptors.response.use(
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('username')
       window.location.href = '/login'
+    }
+
+    // 提取后端返回的错误信息
+    if (error.response && error.response.data) {
+      const errorData = error.response.data
+      // 将后端错误信息附加到 error 对象上
+      error.backendMessage = errorData.message || errorData.error_code || '服务器错误'
+      error.backendErrorCode = errorData.code || errorData.error_code
     }
 
     return Promise.reject(error)
@@ -73,32 +81,32 @@ export const agentApi = {
 export const conversationApi = {
   // 获取对话列表
   getConversations(params) {
-    return api.get('/conversations', { params })
+    return api.get('/conversation/conversations', { params })
   },
 
   // 获取对话详情
   getConversation(conversationId) {
-    return api.get(`/conversations/${conversationId}`)
+    return api.get(`/conversation/conversations/${conversationId}`)
   },
 
   // 创建对话
   createConversation(data) {
-    return api.post('/conversations', data)
+    return api.post('/conversation/conversations', data)
   },
 
   // 更新对话
   updateConversation(conversationId, data) {
-    return api.put(`/conversations/${conversationId}`, data)
+    return api.put(`/conversation/conversations/${conversationId}`, data)
   },
 
   // 删除对话
   deleteConversation(conversationId) {
-    return api.delete(`/conversations/${conversationId}`)
+    return api.delete(`/conversation/conversations/${conversationId}`)
   },
 
   // 归档对话
   archiveConversation(conversationId) {
-    return api.patch(`/conversations/${conversationId}/archive`)
+    return api.patch(`/conversation/conversations/${conversationId}/archive`)
   }
 }
 
@@ -106,22 +114,22 @@ export const conversationApi = {
 export const chatApi = {
   // 发送消息
   chat(conversationId, data) {
-    return api.post(`/conversations/${conversationId}/chat`, data)
+    return api.post(`/chat/conversations/${conversationId}/chat`, data)
   },
 
   // 获取消息历史
   getMessages(conversationId, params) {
-    return api.get(`/conversations/${conversationId}/messages`, { params })
+    return api.get(`/chat/conversations/${conversationId}/messages`, { params })
   },
 
   // 消息反馈
   messageFeedback(messageId, data) {
-    return api.post(`/messages/${messageId}/feedback`, data)
+    return api.post(`/chat/messages/${messageId}/feedback`, data)
   },
 
   // 重新生成消息
   regenerateMessage(conversationId, data) {
-    return api.post(`/conversations/${conversationId}/regenerate`, data)
+    return api.post(`/chat/conversations/${conversationId}/regenerate`, data)
   }
 }
 

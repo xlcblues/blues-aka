@@ -15,7 +15,7 @@ class Agent(db.Model):
     avatar = Column(String(255))
 
     # 配置信息
-    model = Column(String(50), default='gpt-4')
+    model = Column(String(50), default='glm-4.5')
     system_prompt = Column(Text)
     prompt_mode = Column(String(20), default='default')
 
@@ -44,7 +44,7 @@ class Agent(db.Model):
 
     # 关系
     user = db.relationship('User', backref=db.backref('agents', lazy='dynamic', cascade='all, delete-orphan'))
-    # conversations = db.relationship('Conversation', backref=db.backref('agent', lazy='joined'), cascade='all, delete-orphan')  # TODO: 待 Conversation 模型实现后启用
+    conversations = db.relationship('Conversation', back_populates='agent', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<Agent {self.name}>'

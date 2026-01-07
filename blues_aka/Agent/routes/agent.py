@@ -32,7 +32,7 @@ def create_agent():
             name=data['name'],
             description=data.get('description'),
             avatar=data.get('avatar'),
-            model=data.get('model', 'gpt-4'),
+            model=data.get('model', 'glm-4.5'),
             system_prompt=data.get('system_prompt'),
             prompt_mode=data.get('prompt_mode', 'default'),
             tools=data.get('tools'),

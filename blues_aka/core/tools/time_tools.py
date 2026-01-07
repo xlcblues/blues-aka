@@ -5,14 +5,14 @@ from langchain_core.tools import tool
 
 logger = logging.getLogger(__name__)
 
-@tool
+@tool(description="获取当前时间")
 def get_current_time() -> str:
     currentTime = datetime.now()
     currentTimeStr = currentTime.strftime("%Y-%m-%d %H:%M:%S")
     logger.info(currentTimeStr)
     return f"当前时间为：{currentTimeStr}"
 
-@tool
+@tool(description="获取当前日期")
 def get_current_date() -> str:
     now = datetime.now()
     currentDate = now.strftime("%Y-%m-%d")

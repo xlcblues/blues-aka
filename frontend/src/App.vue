@@ -241,7 +241,7 @@ body {
 
 .main-content {
   padding: 30px;
-  max-width: 1600px;
+  width: 100%;
   margin: 0 auto;
   min-height: calc(100vh - 100px);
 }

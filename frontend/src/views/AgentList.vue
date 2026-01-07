@@ -149,10 +149,10 @@
 
         <el-form-item label="模型" prop="model">
           <el-select v-model="form.model" placeholder="请选择模型">
-            <el-option label="GPT-4" value="gpt-4" />
-            <el-option label="GPT-3.5-Turbo" value="gpt-3.5-turbo" />
-            <el-option label="Claude-3-Sonnet" value="claude-3-sonnet" />
-            <el-option label="Claude-3-Haiku" value="claude-3-haiku" />
+            <el-option label="GLM-4.5 (推荐)" value="glm-4.5" />
+            <el-option label="GLM-4.6 (高性能)" value="glm-4.6" />
+            <el-option label="GLM-4.5-Air (快速)" value="glm-4.5-air" />
+            <el-option label="GLM-4.5V (多模态)" value="glm-4.5v" />
           </el-select>
         </el-form-item>
 
@@ -272,7 +272,7 @@ const form = ref({
   name: '',
   description: '',
   avatar: '',
-  model: 'gpt-4',
+  model: 'glm-4.5',
   system_prompt: '',
   prompt_mode: 'default',
   temperature: 0.7,
@@ -398,7 +398,7 @@ const resetForm = () => {
     name: '',
     description: '',
     avatar: '',
-    model: 'gpt-4',
+    model: 'glm-4.5',
     system_prompt: '',
     prompt_mode: 'default',
     temperature: 0.7,

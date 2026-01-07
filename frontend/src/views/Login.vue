@@ -112,6 +112,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { getErrorMessage } from '../utils/errorHandler'
 
 export default {
   name: 'Login',
@@ -135,7 +136,7 @@ export default {
       ],
       password: [
         { required: true, message: '请输入密码', trigger: 'blur' },
-        { min: 6, message: '密码长度不能少于 6 位', trigger: 'blur' }
+        { min: 8, message: '密码长度不能少于 8 位', trigger: 'blur' }
       ]
     }
 
@@ -154,7 +155,7 @@ export default {
         router.push('/users')
       } catch (error) {
         console.error('登录失败:', error)
-        const errorMessage = error.response?.data?.message || error.message || '登录失败，请检查用户名和密码'
+        const errorMessage = getErrorMessage(error)
         ElMessage.error(errorMessage)
       } finally {
         loading.value = false

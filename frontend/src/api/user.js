@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // 创建 axios 实例
 const api = axios.create({
-  baseURL: '',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
   timeout: 10000
 })
 
@@ -34,6 +34,14 @@ api.interceptors.response.use(
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('username')
+    }
+
+    // 提取后端返回的错误信息
+    if (error.response && error.response.data) {
+      const errorData = error.response.data
+      // 将后端错误信息附加到 error 对象上
+      error.backendMessage = errorData.message || errorData.error_code || '服务器错误'
+      error.backendErrorCode = errorData.code || errorData.error_code
     }
 
     return Promise.reject(error)
