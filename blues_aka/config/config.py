@@ -10,11 +10,19 @@ class BaseConfig(BaseSettings):
     """基础配置类"""
 
     # 基础配置
-    SECRET_KEY: str = "blues-aka"
+    SECRET_KEY: str = Field(
+        default="",
+        env="SECRET_KEY",
+        description="Flask 密钥，必须通过环境变量设置"
+    )
     DEBUG: bool = False
 
     # 数据库配置
-    SQLALCHEMY_DATABASE_URI: str
+    SQLALCHEMY_DATABASE_URI: str = Field(
+        default="",
+        env="DATABASE_URL",
+        description="数据库连接字符串，必须通过环境变量设置"
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
 
     # JWT配置
@@ -34,15 +42,17 @@ class BaseConfig(BaseSettings):
     # CORS配置
     CORS_ORIGINS: List[str] = []
 
-    # 默认模型配置
-    default_api_key: str= Field(
-        default="ce30f3c193c24c3da68379db833f58df.pkxCtmhdKeME4PZB",
-        description="模型默认api必须设置"
+    # 智谱 AI API 配置
+    default_api_key: str = Field(
+        default="",
+        env="ZHIPU_API_KEY",
+        description="智谱AI API密钥，必须通过环境变量设置"
     )
 
     default_api_base: str = Field(
         default="https://open.bigmodel.cn/api/paas/v4",
-        description="模型默认url"
+        env="ZHIPU_API_BASE",
+        description="智谱AI API地址"
     )
 
     default_model: str = Field(
@@ -87,14 +97,20 @@ class BaseConfig(BaseSettings):
 class DevelopmentConfig(BaseConfig):
     """开发环境配置"""
     DEBUG: bool = True
-    SQLALCHEMY_DATABASE_URI: str = "postgresql://postgres:123456@localhost:5432/postgres"
     LOG_LEVEL: str = "DEBUG"
+
+class ProductionConfig(BaseConfig):
+    """生产环境配置"""
+    DEBUG: bool = False
+    # 生产环境额外配置
+    LOG_LEVEL: str = "INFO"
 
 class ConfigFactory:
     """配置工厂类"""
 
     _configs = {
         'Dev': DevelopmentConfig,
+        'Prod': ProductionConfig,
     }
 
     @classmethod
@@ -107,7 +123,37 @@ class ConfigFactory:
             raise ValueError(f"Unknown environment: {env_name}")
 
         config_class = cls._configs[env_name]
-        return config_class()
+
+        config = config_class()
+
+        # 验证必需的环境变量
+        if not config.SQLALCHEMY_DATABASE_URI:
+            raise ValueError(
+                "数据库连接字符串(DATABASE_URL)环境变量是必需的。 "
+                "请在.env文件中设置它。"
+            )
+
+        if not config.JWT_SECRET_KEY:
+            raise ValueError(
+                "JWT密钥(JWT_SECRET_KEY)环境变量是必需的。 "
+                "请在.env文件中设置它。"
+            )
+
+        if not config.default_api_key:
+            raise ValueError(
+                "智谱API密钥(ZHIPU_API_KEY)环境变量是必需的。 "
+                "请在.env文件中设置它。"
+            )
+
+        if len(config.JWT_SECRET_KEY) < 32:
+            raise ValueError(
+                "JWT密钥(JWT_SECRET_KEY)必须至少32个字符长。 "
+                "请使用更强的密钥。"
+            )
+
+        return config
+
+
 
 # 向后兼容的配置字典
 config = {
