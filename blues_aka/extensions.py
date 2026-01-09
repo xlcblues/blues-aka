@@ -13,6 +13,9 @@ def init_extensions(app):
             "origins": ["http://localhost:3002", "http://localhost:3000", "http://localhost:3001"],
             "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True
+            "expose_headers": ["X-Total-Count"],
+            "supports_credentials": True,
+            "max_age": 3600,
+            "send_wildcard": False,
         }
     })
