@@ -56,6 +56,24 @@
             prefix-icon="Message"
           />
         </el-form-item>
+        <el-form-item label="🎭 昵称">
+          <el-input
+            v-model="searchForm.nickname"
+            placeholder="请输入昵称"
+            clearable
+            style="width: 200px"
+            prefix-icon="UserFilled"
+          />
+        </el-form-item>
+        <el-form-item label="📱 手机号">
+          <el-input
+            v-model="searchForm.phone"
+            placeholder="请输入手机号"
+            clearable
+            style="width: 200px"
+            prefix-icon="Phone"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch" class="search-btn">
             <el-icon><Search /></el-icon>
@@ -177,6 +195,12 @@
       width="600px"
       @close="handleDialogClose"
       class="user-dialog"
+      center
+      :modal="true"
+      :close-on-click-modal="false"
+      :close-on-press-escape="true"
+      align-center
+      destroy-on-close
     >
       <el-form
         ref="userFormRef"
@@ -207,14 +231,6 @@
 
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="userForm.nickname" placeholder="请输入昵称" />
-        </el-form-item>
-
-        <el-form-item label="状态" prop="status">
-          <el-select v-model="userForm.status" placeholder="请选择状态">
-            <el-option label="活跃" value="active" />
-            <el-option label="非活跃" value="inactive" />
-            <el-option label="已暂停" value="suspended" />
-          </el-select>
         </el-form-item>
       </el-form>
 
@@ -257,7 +273,9 @@ export default {
     // 搜索表单
     const searchForm = reactive({
       username: '',
-      email: ''
+      email: '',
+      nickname: '',
+      phone: ''
     })
 
     // 分页信息
@@ -281,8 +299,7 @@ export default {
       email: '',
       password: '',
       phone: '',
-      nickname: '',
-      status: 'inactive'
+      nickname: ''
     })
 
     // 表单验证规则
@@ -402,7 +419,9 @@ export default {
     const handleReset = () => {
       Object.assign(searchForm, {
         username: '',
-        email: ''
+        email: '',
+        nickname: '',
+        phone: ''
       })
       handleSearch()
     }
@@ -444,8 +463,7 @@ export default {
         email: row.email,
         password: '',
         phone: row.phone,
-        nickname: row.nickname,
-        status: row.status
+        nickname: row.nickname
       })
     }
 
@@ -508,30 +526,125 @@ export default {
         } else {
           console.error('删除用户失败:', error)
           let errorMessage = '删除失败'
+          let errorDetails = []
+
+          // 处理后端返回的详细错误信息
+          if (error.backendMessage) {
+            errorMessage = error.backendMessage
+            errorDetails.push(errorMessage)
+          }
 
           if (error.response) {
             const status = error.response.status
-            if (status === 404) {
-              errorMessage = '用户不存在或已被删除'
-            } else if (status === 403) {
-              errorMessage = '权限不足，无法删除该用户'
-            } else if (status === 409) {
-              errorMessage = '该用户存在关联数据，无法删除'
-            } else if (status === 500) {
-              errorMessage = '服务器错误，请稍后重试'
+            const data = error.response.data
+
+            // 根据错误码显示具体错误
+            if (data && data.error_code) {
+              switch (data.error_code) {
+                case 'USER_NOT_FOUND':
+                  errorMessage = '用户不存在'
+                  errorDetails.push('该用户可能已被删除')
+                  break
+
+                case 'USER_DELETE_FAILED':
+                  errorMessage = '删除用户失败'
+                  errorDetails.push('服务器处理删除请求时发生错误')
+                  break
+
+                case 'DATABASE_INTEGRITY_ERROR':
+                  errorMessage = '数据库约束错误'
+                  errorDetails.push('该用户存在关联数据，无法删除')
+                  errorDetails.push('请先删除该用户的关联数据（如会话、消息等）')
+                  break
+
+                case 'FORBIDDEN':
+                  errorMessage = '权限不足'
+                  errorDetails.push('您没有权限删除该用户')
+                  break
+
+                default:
+                  if (data.message) {
+                    errorDetails.push(data.message)
+                  }
+              }
+            }
+
+            // 根据 HTTP 状态码显示通用错误
+            if (errorDetails.length === 0) {
+              switch (status) {
+                case 404:
+                  errorMessage = '用户不存在'
+                  errorDetails.push('该用户可能已被其他用户删除')
+                  break
+
+                case 403:
+                  errorMessage = '权限不足'
+                  errorDetails.push('您没有权限删除该用户')
+                  errorDetails.push('• 可能需要管理员权限')
+                  errorDetails.push('• 该用户可能是系统管理员')
+                  break
+
+                case 409:
+                  errorMessage = '数据冲突'
+                  errorDetails.push('该用户存在关联数据，无法直接删除')
+                  errorDetails.push('建议先将用户状态设置为"已暂停"')
+                  break
+
+                case 500:
+                  errorMessage = '服务器内部错误'
+                  errorDetails.push('服务器处理请求时发生错误，请稍后重试')
+                  if (data.message) {
+                    errorDetails.push(`错误详情: ${data.message}`)
+                  }
+                  break
+
+                default:
+                  errorDetails.push(data.message || `HTTP ${status} 错误`)
+              }
             }
           } else if (error.code === 'ECONNABORTED') {
-            errorMessage = '请求超时，请检查网络连接'
+            errorMessage = '请求超时'
+            errorDetails.push('请检查网络连接')
+            errorDetails.push('服务器响应时间过长，请稍后重试')
+          } else if (error.message && error.message.includes('Network Error')) {
+            errorMessage = '网络连接失败'
+            errorDetails.push('无法连接到服务器')
+            errorDetails.push('请检查后端服务是否正常运行')
+          } else if (error.message) {
+            errorDetails.push(error.message)
           } else {
-            errorMessage = '网络错误，请检查后端服务状态'
+            errorDetails.push('未知错误，请联系系统管理员')
           }
 
-          ElMessage({
-            message: `❌ ${errorMessage}`,
-            type: 'error',
-            duration: 5000,
-            showClose: true
-          })
+          // 显示错误详情
+          if (errorDetails.length > 1) {
+            ElMessage({
+              message: `❌ ${errorMessage}`,
+              type: 'error',
+              duration: 5000,
+              showClose: true
+            })
+
+            ElMessageBox.alert(
+              `<div style="text-align: left; line-height: 1.8;">
+                <strong style="color: #f56c6c; font-size: 16px;">错误详情:</strong><br/><br/>
+                ${errorDetails.map(detail => `<div style="margin-bottom: 8px; padding-left: 12px;">• ${detail}</div>`).join('')}
+              </div>`,
+              '删除失败',
+              {
+                dangerouslyUseHTMLString: true,
+                confirmButtonText: '我知道了',
+                customClass: 'error-details-box'
+              }
+            ).catch(() => {})
+          } else {
+            ElMessage({
+              message: `❌ ${errorMessage}`,
+              type: 'error',
+              duration: 5000,
+              showClose: true
+            })
+          }
         }
       }
     }
@@ -563,7 +676,11 @@ export default {
             username: userForm.username,
             email: userForm.email,
             password: userForm.password,
-            phone: userForm.phone
+            phone: userForm.phone || null  // 处理空字符串
+          }
+          // 添加可选字段
+          if (userForm.nickname) {
+            createData.nickname = userForm.nickname
           }
           response = await userApi.createUser(createData)
         }
@@ -588,28 +705,158 @@ export default {
       } catch (error) {
         console.error('提交失败:', error)
         let errorMessage = '操作失败'
+        let errorDetails = []
+
+        // 处理后端返回的详细错误信息
+        if (error.backendMessage) {
+          errorMessage = error.backendMessage
+          errorDetails.push(errorMessage)
+        }
 
         if (error.response) {
           const status = error.response.status
-          if (status === 409) {
-            errorMessage = '用户名或邮箱已被使用'
-          } else if (status === 400) {
-            errorMessage = '请求数据格式错误'
-          } else if (status === 500) {
-            errorMessage = '服务器内部错误，请稍后重试'
+          const data = error.response.data
+
+          // 根据不同的错误码显示具体的错误信息
+          if (data && data.error_code) {
+            switch (data.error_code) {
+              case 'INVALID_PARAMS':
+                errorMessage = '参数验证失败'
+                if (data.message) {
+                  errorDetails.push(`详细信息: ${data.message}`)
+                }
+                break
+
+              case 'DUPLICATE_USER':
+              case 'DUPLICATE_USERNAME':
+                errorMessage = '用户名已被使用'
+                errorDetails.push('❌ 用户名已存在，请使用其他用户名')
+                // 高亮显示用户名输入框
+                setTimeout(() => {
+                  if (userFormRef.value) {
+                    userFormRef.value.validateField('username')
+                  }
+                }, 100)
+                break
+
+              case 'DUPLICATE_EMAIL':
+                errorMessage = '邮箱已被使用'
+                errorDetails.push('❌ 邮箱已被注册，请使用其他邮箱')
+                // 高亮显示邮箱输入框
+                setTimeout(() => {
+                  if (userFormRef.value) {
+                    userFormRef.value.validateField('email')
+                  }
+                }, 100)
+                break
+
+              case 'DATABASE_INTEGRITY_ERROR':
+                errorMessage = '数据库冲突错误'
+                errorDetails.push('数据可能已存在或违反约束条件')
+                break
+
+              case 'USER_CREATION_FAILED':
+                errorMessage = '用户创建失败'
+                errorDetails.push('服务器处理请求时发生错误')
+                break
+
+              case 'USER_UPDATE_FAILED':
+                errorMessage = '用户更新失败'
+                errorDetails.push('服务器处理请求时发生错误')
+                break
+
+              case 'USER_NOT_FOUND':
+                errorMessage = '用户不存在'
+                errorDetails.push('该用户可能已被删除')
+                break
+
+              case 'EMPTY_REQUEST_BODY':
+                errorMessage = '请求数据为空'
+                errorDetails.push('请填写所有必填字段')
+                break
+
+              default:
+                if (data.message) {
+                  errorDetails.push(data.message)
+                }
+            }
+          }
+
+          // 根据 HTTP 状态码显示通用错误
+          if (errorDetails.length === 0) {
+            switch (status) {
+              case 400:
+                errorMessage = '请求数据格式错误'
+                errorDetails.push('请检查输入的字段是否符合要求')
+                errorDetails.push('• 用户名: 3-50个字符')
+                errorDetails.push('• 邮箱: 必须是有效的邮箱地址')
+                errorDetails.push('• 密码: 至少6个字符')
+                break
+
+              case 409:
+                errorMessage = '数据冲突'
+                errorDetails.push('用户名或邮箱已被使用')
+                break
+
+              case 500:
+                errorMessage = '服务器内部错误'
+                errorDetails.push('服务器处理请求时发生错误，请稍后重试')
+                if (data.message) {
+                  errorDetails.push(`错误详情: ${data.message}`)
+                }
+                break
+
+              default:
+                errorDetails.push(data.message || `HTTP ${status} 错误`)
+            }
           }
         } else if (error.code === 'ECONNABORTED') {
-          errorMessage = '请求超时，请检查网络连接'
+          errorMessage = '请求超时'
+          errorDetails.push('请检查网络连接')
+          errorDetails.push('服务器响应时间过长，请稍后重试')
+        } else if (error.message && error.message.includes('Network Error')) {
+          errorMessage = '网络连接失败'
+          errorDetails.push('无法连接到服务器')
+          errorDetails.push('请检查:')
+          errorDetails.push('• 后端服务是否正常运行')
+          errorDetails.push('• 网络连接是否正常')
+          errorDetails.push('• API 地址配置是否正确')
+        } else if (error.message) {
+          errorDetails.push(error.message)
         } else {
-          errorMessage = '网络错误，请检查后端服务是否正常运行'
+          errorDetails.push('未知错误，请联系系统管理员')
         }
 
-        ElMessage({
-          message: `❌ ${errorMessage}`,
-          type: 'error',
-          duration: 5000,
-          showClose: true
-        })
+        // 显示错误消息，如果有详细信息则使用通知框
+        if (errorDetails.length > 1) {
+          ElMessage({
+            message: `❌ ${errorMessage}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
+
+          // 使用 ElMessageBox 显示详细错误
+          ElMessageBox.alert(
+            `<div style="text-align: left; line-height: 1.8;">
+              <strong style="color: #f56c6c; font-size: 16px;">错误详情:</strong><br/><br/>
+              ${errorDetails.map(detail => `<div style="margin-bottom: 8px; padding-left: 12px;">• ${detail}</div>`).join('')}
+            </div>`,
+            '操作失败',
+            {
+              dangerouslyUseHTMLString: true,
+              confirmButtonText: '我知道了',
+              customClass: 'error-details-box'
+            }
+          ).catch(() => {})
+        } else {
+          ElMessage({
+            message: `❌ ${errorMessage}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
+        }
       } finally {
         submitting.value = false
       }
@@ -631,8 +878,7 @@ export default {
         email: '',
         password: '',
         phone: '',
-        nickname: '',
-        status: 'inactive'
+        nickname: ''
       })
     }
 
@@ -677,7 +923,7 @@ export default {
 
     // 获取空状态文本
     const getEmptyText = () => {
-      const hasSearch = searchForm.username || searchForm.email
+      const hasSearch = searchForm.username || searchForm.email || searchForm.nickname || searchForm.phone
       if (hasSearch) {
         return '🔍 没有找到匹配的用户，请尝试其他搜索条件'
       }
@@ -1066,6 +1312,25 @@ export default {
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   overflow: hidden;
+  margin: auto;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.user-dialog :deep(.el-overlay) {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .user-dialog :deep(.el-dialog__header) {
@@ -1335,6 +1600,15 @@ export default {
     margin-bottom: 16px;
   }
 
+  .search-section :deep(.el-input) {
+    width: 100% !important;
+  }
+
+  .search-section :deep(.el-form-item__label) {
+    display: block;
+    margin-bottom: 8px;
+  }
+
   .search-header {
     margin-bottom: 20px;
   }
@@ -1348,6 +1622,13 @@ export default {
   .create-btn {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* 平板设备优化 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .search-section :deep(.el-input) {
+    width: 180px !important;
   }
 }
 
@@ -1372,5 +1653,47 @@ export default {
   .delete-btn {
     border: 2px solid currentColor;
   }
+}
+
+/* 错误详情弹窗样式 */
+:deep(.error-details-box) {
+  border-radius: 12px;
+}
+
+:deep(.error-details-box .el-message-box__content) {
+  padding: 20px;
+}
+
+:deep(.error-details-box .el-message-box__message) {
+  font-size: 14px;
+  color: #606266;
+}
+
+:deep(.error-details-box .el-message-box__header) {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  border-radius: 12px 12px 0 0;
+  padding: 20px;
+}
+
+:deep(.error-details-box .el-message-box__title) {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+:deep(.error-details-box .el-message-box__btns) {
+  padding: 15px 20px 20px;
+}
+
+:deep(.error-details-box .el-button--primary) {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-weight: 600;
+}
+
+:deep(.error-details-box .el-button--primary:hover) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
 }
 </style>

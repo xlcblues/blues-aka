@@ -39,6 +39,12 @@ def get_users():
         if query_params.get('email'):
             query = query.filter(User.email.like(f"%{query_params.get('email')}%"))
 
+        if query_params.get('nickname'):
+            query = query.filter(User.nickname.like(f"%{query_params.get('nickname')}%"))
+
+        if query_params.get('phone'):
+            query = query.filter(User.phone.like(f"%{query_params.get('phone')}%"))
+
         # 获取排序方式
         sort_by = query_params.get('sort_by')
         order_by = query_params.get('order_by')
@@ -99,20 +105,35 @@ def create_user():
         create_user = userCreateSchema()
         validated_data = create_user.load(json_data)
 
+        # 检查用户名是否已存在
         existing_user = User.query.filter(
-            User.username == validated_data['username'],
-            User.email == validated_data['email'],
+            User.username == validated_data['username']
         ).first()
 
         if existing_user:
-            field = 'username' if existing_user.username == validated_data['username'] else 'email'
-            raise BusinessException(code=409, message=f"{field} 已被使用", error_code="DUPLICATE_USER")
+            raise BusinessException(code=409, message="用户名已被使用", error_code="DUPLICATE_USERNAME")
 
+        # 检查邮箱是否已存在
+        existing_user = User.query.filter(
+            User.email == validated_data['email']
+        ).first()
+
+        if existing_user:
+            raise BusinessException(code=409, message="邮箱已被使用", error_code="DUPLICATE_EMAIL")
+
+        # 创建用户对象，处理可选字段
         new_user = User(
             username=validated_data['username'],
             email=validated_data['email'],
             password_hash=validated_data['password'],
         )
+
+        # 添加可选字段
+        if 'nickname' in validated_data and validated_data['nickname']:
+            new_user.nickname = validated_data['nickname']
+
+        if 'phone' in validated_data and validated_data['phone']:
+            new_user.phone = validated_data['phone']
 
         db.session.add(new_user)
         db.session.commit()

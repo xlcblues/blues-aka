@@ -5,6 +5,8 @@ class userQuerySchema(Schema):
     id = fields.Integer()
     username = fields.String()
     email = fields.String()
+    nickname = fields.String()
+    phone = fields.String()
 
     # 分页参数
     page = fields.Integer(validate=validate.Range(min=1))
@@ -37,15 +39,35 @@ class userQueryRespSchema(Schema):
     updated_at = fields.DateTime()
 
 class userCreateSchema(Schema):
-    username = fields.String()
-    password = fields.String()
-    email = fields.String()
-    phone = fields.String(allow_none=True)
+    username = fields.String(
+        required=True,
+        validate=validate.Length(min=3, max=50),
+        error_messages={'required': '用户名不能为空'}
+    )
+    password = fields.String(
+        required=True,
+        validate=validate.Length(min=6),
+        error_messages={'required': '密码不能为空'}
+    )
+    email = fields.Email(
+        required=True,
+        error_messages={'required': '邮箱不能为空'}
+    )
+    nickname = fields.String(
+        validate=validate.Length(max=100),
+        missing=None  # 默认值为 None
+    )
+    phone = fields.String(
+        allow_none=True,
+        validate=validate.Length(max=20),
+        missing=None
+    )
 
 class userCreateRespSchema(Schema):
     username = fields.String()
     password = fields.String()
     email = fields.String()
+    nickname = fields.String()
     phone = fields.String(allow_none=True)
 
 class userUpdateSchema(Schema):
