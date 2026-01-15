@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
 import UserList from '../views/UserList.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
@@ -29,7 +30,7 @@ const routes = [
     path: '/users',
     name: 'UserList',
     component: UserList,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
     path: '/profile',
@@ -69,7 +70,12 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
+  const authStore = useAuthStore()
+
+  // 初始化认证状态
+  authStore.initializeAuth()
+
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true'
   const hasToken = localStorage.getItem('access_token')
 
@@ -79,6 +85,30 @@ router.beforeEach((to, from, next) => {
   // 如果需要登录验证但用户未认证
   if (to.meta.requiresAuth && !isAuthenticated) {
     next('/login')
+  }
+  // 如果需要管理员权限但用户不是管理员
+  else if (to.meta.requiresAdmin && isAuthenticated) {
+    // 如果还没有获取用户信息或管理员状态，先获取
+    if (!authStore.userId || authStore.isAdmin === undefined) {
+      try {
+        console.log('正在获取用户信息...')
+        const userData = await authStore.fetchCurrentUser()
+        console.log('用户信息获取成功:', userData)
+      } catch (error) {
+        console.error('获取用户信息失败:', error)
+        next('/login')
+        return
+      }
+    }
+
+    // 检查是否是管理员
+    if (!authStore.isAdmin) {
+      console.log('非管理员用户尝试访问管理员页面')
+      next('/agents') // 重定向到智能体列表页
+    } else {
+      console.log('管理员用户，允许访问')
+      next()
+    }
   }
   // 如果已登录，访问登录或注册页面则重定向到智能体列表
   else if ((to.path === '/login' || to.path === '/register') && isAuthenticated) {

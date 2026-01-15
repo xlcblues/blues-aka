@@ -4,29 +4,6 @@
     <div class="page-header">
       <h1 class="page-title">🐱‍👤 用户管理</h1>
       <div class="header-actions">
-        <el-dropdown @command="handleMenuCommand">
-          <el-button type="primary" class="user-menu-btn">
-            <el-icon><User /></el-icon>
-            {{ currentUser?.username || '用户' }}
-            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="profile">
-                <el-icon><User /></el-icon>
-                个人信息
-              </el-dropdown-item>
-              <el-dropdown-item command="settings">
-                <el-icon><Setting /></el-icon>
-                系统设置
-              </el-dropdown-item>
-              <el-dropdown-item divided command="logout">
-                <el-icon><SwitchButton /></el-icon>
-                退出登录
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
         <el-button type="success" @click="handleCreate" class="create-btn">
           <el-icon><Plus /></el-icon>
           新增用户
@@ -247,17 +224,15 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '../api/user'
-import { useAuthStore } from '../stores/auth'
 
 export default {
   name: 'UserList',
   setup() {
     const router = useRouter()
-    const authStore = useAuthStore()
 
     // 响应式数据
     const loading = ref(false)
@@ -266,9 +241,6 @@ export default {
     const dialogVisible = ref(false)
     const isEdit = ref(false)
     const userFormRef = ref(null)
-
-    // 当前用户
-    const currentUser = computed(() => authStore.currentUser)
 
     // 搜索表单
     const searchForm = reactive({
@@ -669,6 +641,10 @@ export default {
           if (userForm.password) {
             updateData.password = userForm.password
           }
+          // 添加可选字段 nickname
+          if (userForm.nickname) {
+            updateData.nickname = userForm.nickname
+          }
           response = await userApi.updateUser(userForm.id, updateData)
         } else {
           // 创建时只提交后端接受的字段
@@ -955,51 +931,10 @@ export default {
 
     // 组件挂载时获取数据和绑定事件
     onMounted(() => {
-      // 初始化认证状态
-      authStore.initializeAuth()
       fetchUsers()
       // 绑定键盘事件
       document.addEventListener('keydown', handleKeydown)
     })
-
-    // 处理用户菜单命令
-    const handleMenuCommand = (command) => {
-      switch (command) {
-        case 'profile':
-          router.push('/profile')
-          break
-        case 'settings':
-          router.push('/settings')
-          break
-        case 'logout':
-          handleLogout()
-          break
-      }
-    }
-
-    // 处理登出
-    const handleLogout = async () => {
-      try {
-        await ElMessageBox.confirm(
-          '确定要退出登录吗？',
-          '提示',
-          {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            type: 'warning',
-          }
-        )
-
-        await authStore.logout()
-        ElMessage.success('退出登录成功！')
-        router.push('/login')
-      } catch (error) {
-        if (error !== 'cancel') {
-          console.error('登出失败:', error)
-          ElMessage.error('登出失败，请重试')
-        }
-      }
-    }
 
     // 组件卸载时清理事件
     const cleanup = () => {
@@ -1011,7 +946,6 @@ export default {
 
     return {
       // 响应式数据
-      currentUser,
       loading,
       submitting,
       userList,
@@ -1036,8 +970,6 @@ export default {
       handleDelete,
       handleSubmit,
       handleDialogClose,
-      handleMenuCommand,
-      handleLogout,
       getStatusType,
       getStatusText,
       getStatusIcon,
@@ -1055,18 +987,36 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid #4299e1;
+  padding: 24px 30px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   position: relative;
+  overflow: hidden;
+}
+
+.page-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 700;
-  color: #2d3748;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   margin: 0;
-  text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
   letter-spacing: 0.5px;
+  text-shadow: none;
 }
 
 .header-actions {
@@ -1091,31 +1041,59 @@ export default {
 }
 
 .create-btn {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
   border-radius: 25px;
-  padding: 12px 24px;
+  padding: 12px 28px;
   font-weight: 600;
   color: white;
-  box-shadow: 0 4px 15px rgba(66, 153, 225, 0.4);
-  transition: all 0.3s ease;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.create-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transition: left 0.5s;
+}
+
+.create-btn:hover::before {
+  left: 100%;
 }
 
 .create-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(66, 153, 225, 0.6);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.6);
 }
 
 /* 搜索区域样式 */
 .search-section {
   margin-bottom: 24px;
-  padding: 24px;
-  background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 30%, #90cdf4 60%, #63b3ed 100%);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(66, 153, 225, 0.15);
-  border: 1px solid rgba(66, 153, 225, 0.3);
+  padding: 28px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   position: relative;
   overflow: hidden;
+}
+
+.search-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
 }
 
 .search-section::before {
@@ -1129,54 +1107,72 @@ export default {
 }
 
 .search-header {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2d3748;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
-  letter-spacing: 0.3px;
+  font-size: 18px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+  letter-spacing: 0.5px;
 }
 
 .search-btn {
-  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
   border-radius: 20px;
-  padding: 10px 20px;
+  padding: 10px 24px;
   color: white;
   font-weight: 600;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
 }
 
 .search-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(66, 153, 225, 0.4);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+  background: linear-gradient(135deg, #764ba2 0%, #f093fb 100%);
 }
 
 .reset-btn {
-  background: linear-gradient(135deg, #718096 0%, #4a5568 100%);
+  background: linear-gradient(135deg, #a0aec0 0%, #718096 100%);
   border: none;
   border-radius: 20px;
-  padding: 10px 20px;
+  padding: 10px 24px;
   color: white;
   font-weight: 600;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(160, 174, 192, 0.3);
 }
 
 .reset-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(113, 128, 150, 0.4);
+  box-shadow: 0 6px 20px rgba(160, 174, 192, 0.5);
 }
 
 /* 表格容器样式 */
 .table-container {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 10px 40px rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   margin-bottom: 24px;
   position: relative;
+  overflow: hidden;
+}
+
+.table-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
 }
 
 .table-container::before {

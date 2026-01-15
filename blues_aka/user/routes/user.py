@@ -7,6 +7,7 @@ from marshmallow import ValidationError
 from blues_aka.common.exception import BusinessException
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
+from blues_aka.common.utils import SortValidator, require_admin
 from blues_aka.user.models import User
 
 from blues_aka.extensions import db
@@ -19,6 +20,7 @@ user_bp = Blueprint('user', __name__, url_prefix='/user')
 # 管理员查询用户
 @user_bp.route('/users', methods=['GET'])
 @handle_api_response
+@require_admin
 def get_users():
 
     try:
@@ -45,15 +47,25 @@ def get_users():
         if query_params.get('phone'):
             query = query.filter(User.phone.like(f"%{query_params.get('phone')}%"))
 
-        # 获取排序方式
+        # 定义允许排序的字段
+        ALLOWED_SORT_FIELDS = {
+            'id', 'username', 'email', 'nickname',
+            'phone', 'role', 'status', 'created_at', 'updated_at'
+        }
+
+        # 使用通用排序工具
         sort_by = query_params.get('sort_by')
         order_by = query_params.get('order_by')
-        if sort_by:
-            sort_field = getattr(User, sort_by)
-            if order_by == 'desc':
-                query = query.order_by(sort_field.desc())
-            else:
-                query = query.order_by(sort_field.asc())
+
+        query = SortValidator.validate_and_apply_sort(
+            query=query,
+            model=User,
+            sort_by=sort_by,
+            order_by=order_by,
+            allowed_fields=ALLOWED_SORT_FIELDS,
+            default_field='created_at',
+            default_order='desc'
+        )
 
         # 分页
         pagination = query.paginate(
@@ -90,6 +102,7 @@ def get_users():
 # 创建新用户
 @user_bp.route('/users', methods=['POST'])
 @handle_api_response
+@require_admin
 def create_user():
     """
         创建新用户接口
@@ -224,6 +237,7 @@ def update_user(id):
 # 删除用户
 @user_bp.route('/users/<int:id>', methods=['DELETE'])
 @handle_api_response
+@require_admin
 def delete_user(id):
     """
     删除用户接口

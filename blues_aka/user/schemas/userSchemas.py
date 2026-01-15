@@ -11,7 +11,11 @@ class userQuerySchema(Schema):
     # 分页参数
     page = fields.Integer(validate=validate.Range(min=1))
     per_page = fields.Integer(validate=validate.Range(min=1, max=100))
-    sort_by = fields.String(validate=validate.OneOf(['id', 'username', 'email']))
+    # 允许排序的字段（与路由中的 ALLOWED_SORT_FIELDS 保持一致）
+    sort_by = fields.String(validate=validate.OneOf([
+        'id', 'username', 'email', 'nickname',
+        'phone', 'role', 'status', 'created_at', 'updated_at'
+    ]))
     order_by = fields.String(validate=validate.OneOf(['asc', 'desc']))
 
 class userQueryRespSchema(Schema):
@@ -74,10 +78,12 @@ class userUpdateSchema(Schema):
     username = fields.String()
     password = fields.String()
     email = fields.String()
+    nickname = fields.String()
     phone = fields.String(allow_none=True)
 
 class userUpdateRespSchema(Schema):
     username = fields.String()
     password = fields.String()
     email = fields.String()
+    nickname = fields.String()
     phone = fields.String(allow_none=True)

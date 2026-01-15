@@ -8,6 +8,8 @@ export const useAuthStore = defineStore('auth', () => {
   const refresh_token = ref(localStorage.getItem('refresh_token') || '')
   const username = ref(localStorage.getItem('username') || '')
   const isLoggedIn = ref(!!localStorage.getItem('access_token'))
+  const isAdmin = ref(localStorage.getItem('is_admin') === 'true')
+  const userId = ref(localStorage.getItem('user_id') || '')
 
   // Getters
   const isAuthenticated = computed(() => {
@@ -16,8 +18,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   const currentUser = computed(() => {
     return {
+      id: userId.value,
       username: username.value,
-      isLoggedIn: isAuthenticated.value
+      isLoggedIn: isAuthenticated.value,
+      isAdmin: isAdmin.value
     }
   })
 
@@ -31,7 +35,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   const setUser = (userData) => {
     username.value = userData.username
+    userId.value = userData.id || ''
+    isAdmin.value = userData.is_admin || false
     localStorage.setItem('username', userData.username)
+    if (userData.id) {
+      localStorage.setItem('user_id', userData.id)
+    }
+    localStorage.setItem('is_admin', userData.is_admin ? 'true' : 'false')
   }
 
   const login = async (credentials) => {
@@ -47,6 +57,9 @@ export const useAuthStore = defineStore('auth', () => {
         setUser({ username: credentials.username })
         isLoggedIn.value = true
         localStorage.setItem('isLoggedIn', 'true')
+
+        // 登录成功后获取完整的用户信息
+        await fetchCurrentUser()
 
         return { success: true, data: data }
       } else {
@@ -85,6 +98,8 @@ export const useAuthStore = defineStore('auth', () => {
     access_token.value = ''
     refresh_token.value = ''
     username.value = ''
+    userId.value = ''
+    isAdmin.value = false
     isLoggedIn.value = false
 
     // 清除localStorage
@@ -92,6 +107,8 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('refresh_token')
     localStorage.removeItem('username')
     localStorage.removeItem('isLoggedIn')
+    localStorage.removeItem('is_admin')
+    localStorage.removeItem('user_id')
   }
 
   const refreshAccessToken = async () => {
@@ -125,9 +142,33 @@ export const useAuthStore = defineStore('auth', () => {
       access_token.value = token
       refresh_token.value = localStorage.getItem('refresh_token') || ''
       username.value = user || ''
+      userId.value = localStorage.getItem('user_id') || ''
+      isAdmin.value = localStorage.getItem('is_admin') === 'true'
       isLoggedIn.value = true
     } else {
       clearAuth()
+    }
+  }
+
+  // 获取当前用户信息
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await authApi.getCurrentUser()
+      if (response.code === 200 || response.status === 'success') {
+        const userData = response.data
+        setUser({
+          id: userData.id,
+          username: userData.username,
+          is_admin: userData.is_admin
+        })
+        return userData
+      }
+    } catch (error) {
+      console.error('获取用户信息失败:', error)
+      // 如果获取失败，可能token已过期，清除认证状态
+      if (error.response && error.response.status === 401) {
+        clearAuth()
+      }
     }
   }
 
@@ -137,6 +178,8 @@ export const useAuthStore = defineStore('auth', () => {
     refresh_token,
     username,
     isLoggedIn,
+    isAdmin,
+    userId,
 
     // Getters
     isAuthenticated,
@@ -150,6 +193,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshAccessToken,
     initializeAuth,
     setTokens,
-    setUser
+    setUser,
+    fetchCurrentUser
   }
 })

@@ -84,5 +84,10 @@ export const authApi = {
   // 用户注册
   register(data) {
     return api.post('/auth/register', data)
+  },
+
+  // 获取当前用户信息
+  getCurrentUser() {
+    return api.get('/auth/me')
   }
 }
