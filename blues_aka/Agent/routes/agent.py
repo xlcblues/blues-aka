@@ -129,10 +129,10 @@ def update_agent(agent_id):
         data = schema.load(request.get_json())
 
         user_id = get_jwt_identity()
-        agent = Agent.query.filter_by(id=agent_id).first()
+        agent = Agent.query.filter_by(id=agent_id, user_id=user_id).first()
 
         if agent is None:
-            raise BusinessException(code=404, message="智能体不存在", error_code="EMPTY_REQUEST_BODY")
+            raise BusinessException(code=404, message="智能体不存在", error_code="AGENT_NOT_FOUND")
 
         for key, value in data.items():
             if hasattr(agent, key):
