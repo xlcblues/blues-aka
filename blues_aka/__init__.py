@@ -8,7 +8,7 @@ from .config.config import ConfigFactory
 from .extensions import init_extensions
 from .jwt import init_jwt
 from .logger import init_logger
-
+from blues_aka.common.exceptionHandles import register_error_handlers
 
 def create_app(config_name):
     app = Flask(__name__)
@@ -18,4 +18,5 @@ def create_app(config_name):
     init_blueprints(app)
     init_logger(app)
     init_jwt(app)
+    register_error_handlers(app)
     return app
