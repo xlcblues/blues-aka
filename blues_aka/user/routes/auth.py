@@ -1,3 +1,4 @@
+import datetime
 import logging
 
 from flask import Blueprint, request
@@ -11,6 +12,7 @@ from blues_aka.common.responseapi import handle_api_response
 from blues_aka.extensions import db
 from blues_aka.user.models import User
 from blues_aka.user.schemas import userRegisterSchema, userLoginSchema, userRegisterRespSchema
+from blues_aka.user.utils import get_client_ip, get_ip_location
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -43,8 +45,11 @@ def login():
             'refresh_token': refresh_token,
         }
 
+        user.login_count += 1
+        user.last_login_at = datetime.datetime.now()
+        user.last_login_ip = get_client_ip()
+        user.status = 'active'
         db.session.commit()
-        logger.info("登录成功！")
         return success(data=data)
 
     except BusinessException as e:
