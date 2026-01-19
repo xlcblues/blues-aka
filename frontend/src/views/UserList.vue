@@ -85,7 +85,7 @@
         class="user-table"
         :empty-text="getEmptyText()"
       >
-      <el-table-column prop="id" label="#" width="60" sortable="custom" align="center">
+      <el-table-column prop="id" label="#" width="80" sortable="custom" align="center">
         <template #default="{ row }">
           <span class="user-id">#{{ row.id }}</span>
         </template>

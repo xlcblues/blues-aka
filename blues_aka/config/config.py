@@ -90,6 +90,45 @@ class BaseConfig(BaseSettings):
         description="Agent最大执行时间"
     )
 
+    # Embedding 配置
+    embedding_model: str = Field(
+        default="embedding-3",
+        description="Embedding 模型名称"
+    )
+
+    embedding_batch_size: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description="Embedding 批处理大小"
+    )
+
+    # 文本分块配置
+    chunk_size: int = Field(
+        default=1000,
+        ge=100,
+        le=10000,
+        description="文本分块大小（字符数）"
+    )
+
+    chunk_overlap: int = Field(
+        default=200,
+        ge=0,
+        le=1000,
+        description="文本分块重叠大小（字符数）"
+    )
+
+    # 向量库配置
+    vector_store_type: str = Field(
+        default="faiss",
+        description="向量库类型：faiss, inmemory, chroma"
+    )
+
+    vector_store_path: str = Field(
+        default="data/indexes",
+        description="向量库存储路径"
+    )
+
     class Config:
         env_file = ".env"
         case_sensitive = True
