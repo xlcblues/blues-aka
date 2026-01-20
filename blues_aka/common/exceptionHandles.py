@@ -1,10 +1,10 @@
 import time
 import uuid
 
-from werkzeug.exceptions import HTTPException  # ✅ 修改这里
+from werkzeug.exceptions import HTTPException
 
 from flask import jsonify
-from blues_aka.common.exception import BusinessException  # ✅ 修改导入路径
+from blues_aka.common.exception import BusinessException
 
 
 def register_error_handlers(app):
