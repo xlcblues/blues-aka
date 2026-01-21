@@ -134,6 +134,13 @@
               placeholder="请输入新密码"
               show-password
             />
+            <!-- 密码强度指示器 -->
+            <PasswordStrength
+              v-if="passwordForm.newPassword"
+              :password="passwordForm.newPassword"
+              :show-details="true"
+              :show-hints="true"
+            />
           </el-form-item>
 
           <el-form-item label="🔐 确认密码" prop="confirmPassword">
@@ -163,9 +170,15 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import PasswordStrength from '../components/PasswordStrength.vue'
+import { validatePassword } from '../utils/password'
+import { authApi, userApi } from '../api/user'
 
 export default {
   name: 'Profile',
+  components: {
+    PasswordStrength
+  },
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
@@ -214,30 +227,31 @@ export default {
       ]
     }
 
-    // 密码确认验证器
-    const validateConfirmPassword = (rule, value, callback) => {
-      if (value === '') {
-        callback(new Error('请再次输入密码'))
-      } else if (value !== passwordForm.newPassword) {
-        callback(new Error('两次输入密码不一致'))
-      } else {
-        callback()
-      }
-    }
-
-    const passwordRules = {
+    const passwordRules = computed(() => ({
       currentPassword: [
         { required: true, message: '请输入当前密码', trigger: 'blur' }
       ],
       newPassword: [
         { required: true, message: '请输入新密码', trigger: 'blur' },
-        { min: 6, max: 128, message: '密码长度在 6 到 128 个字符', trigger: 'blur' },
-        { pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码必须包含至少一个字母和一个数字', trigger: 'blur' }
+        { validator: validatePassword, trigger: 'blur' }
       ],
       confirmPassword: [
-        { validator: validateConfirmPassword, trigger: 'blur' }
+        {
+          validator: (rule, value, callback) => {
+            if (!value) {
+              callback(new Error('请再次输入密码'))
+              return
+            }
+            if (value !== passwordForm.newPassword) {
+              callback(new Error('两次输入的密码不一致'))
+            } else {
+              callback()
+            }
+          },
+          trigger: 'blur'
+        }
       ]
-    }
+    }))
 
     // 获取状态类型
     const getStatusType = (status) => {
@@ -271,30 +285,28 @@ export default {
     // 加载用户资料
     const loadUserProfile = async () => {
       try {
-        // 模拟用户数据，实际应该从API获取
-        const userData = {
-          username: authStore.username,
-          email: 'user@example.com',
-          phone: '13800138000',
-          nickname: '音乐爱好者',
-          status: 'active',
-          created_at: '2024-01-01T00:00:00Z',
-          last_login_at: new Date().toISOString()
+        const response = await authApi.getCurrentUser()
+
+        if (response.code === 200) {
+          const userData = response.data
+
+          Object.assign(profileForm, {
+            username: userData.username || '',
+            email: userData.email || '',
+            phone: userData.phone || '',
+            nickname: userData.nickname || ''
+          })
+
+          userStatus.value = userData.status || 'active'
+          createdAt.value = userData.created_at || ''
+          lastLoginAt.value = userData.last_login_at || ''
+        } else {
+          ElMessage.error(response.message || '加载用户资料失败')
         }
-
-        Object.assign(profileForm, {
-          username: userData.username,
-          email: userData.email,
-          phone: userData.phone,
-          nickname: userData.nickname
-        })
-
-        userStatus.value = userData.status
-        createdAt.value = userData.created_at
-        lastLoginAt.value = userData.last_login_at
       } catch (error) {
         console.error('加载用户资料失败:', error)
-        ElMessage.error('加载用户资料失败')
+        const errorMessage = error.backendMessage || error.message || '加载用户资料失败'
+        ElMessage.error(errorMessage)
       }
     }
 
@@ -306,14 +318,39 @@ export default {
         await profileFormRef.value.validate()
         saving.value = true
 
-        // 模拟API调用
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // 获取当前用户ID
+        const userId = authStore.currentUser?.id
 
-        ElMessage.success('个人资料保存成功！')
-        editMode.value = false
+        if (!userId) {
+          ElMessage.error('用户信息不完整，请重新登录')
+          await authStore.logout()
+          router.push('/login')
+          return
+        }
+
+        // 调用更新API
+        const response = await userApi.updateUser(userId, {
+          username: profileForm.username,
+          email: profileForm.email,
+          phone: profileForm.phone || undefined,
+          nickname: profileForm.nickname || undefined
+        })
+
+        if (response.code === 200) {
+          ElMessage.success('个人资料保存成功！')
+          editMode.value = false
+
+          // 重新加载用户信息
+          await loadUserProfile()
+          // 更新store中的用户信息
+          await authStore.fetchCurrentUser()
+        } else {
+          ElMessage.error(response.message || '保存失败')
+        }
       } catch (error) {
         console.error('保存个人资料失败:', error)
-        ElMessage.error('保存失败，请重试')
+        const errorMessage = error.backendMessage || error.message || '保存失败，请重试'
+        ElMessage.error(errorMessage)
       } finally {
         saving.value = false
       }
@@ -333,24 +370,58 @@ export default {
         await passwordFormRef.value.validate()
         changingPassword.value = true
 
-        // 模拟API调用
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // 获取当前用户ID
+        const userId = authStore.currentUser?.id
+        if (!userId) {
+          ElMessage.error('用户信息不完整，请重新登录')
+          await authStore.logout()
+          router.push('/login')
+          return
+        }
 
-        ElMessage.success('密码修改成功！请重新登录')
-
-        // 清空表单
-        Object.assign(passwordForm, {
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: ''
+        // 调用修改密码API
+        const response = await userApi.changePassword(userId, {
+          password: passwordForm.currentPassword,
+          new_password: passwordForm.newPassword
         })
 
-        // 退出登录
-        await authStore.logout()
-        router.push('/login')
+        if (response.code === 200) {
+          ElMessage.success('密码修改成功！请重新登录')
+
+          // 清空表单
+          Object.assign(passwordForm, {
+            currentPassword: '',
+            newPassword: '',
+            confirmPassword: ''
+          })
+
+          // 延迟1秒后退出登录，让用户看到成功提示
+          setTimeout(async () => {
+            // 退出登录
+            await authStore.logout()
+            router.push('/login')
+          }, 1000)
+        } else {
+          ElMessage.error(response.message || '修改失败')
+        }
       } catch (error) {
         console.error('修改密码失败:', error)
-        ElMessage.error('修改失败，请检查当前密码是否正确')
+
+        // 处理特定错误
+        let errorMessage = '修改失败，请重试'
+        if (error.backendMessage) {
+          errorMessage = error.backendMessage
+        } else if (error.message) {
+          errorMessage = error.message
+        }
+
+        // 如果是当前密码错误，给出更明确的提示
+        if (error.backendErrorCode === 'INVALID_CURRENT_PASSWORD' ||
+            errorMessage.includes('当前密码不正确')) {
+          errorMessage = '当前密码不正确，请重新输入'
+        }
+
+        ElMessage.error(errorMessage)
       } finally {
         changingPassword.value = false
       }

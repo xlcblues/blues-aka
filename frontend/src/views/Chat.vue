@@ -92,7 +92,7 @@
                     <el-icon><RefreshRight /></el-icon>
                     重新生成
                   </el-button>
-                  <el-dropdown trigger="click">
+                  <el-dropdown trigger="click" v-if="!message.rating">
                     <el-button size="small">
                       <el-icon><Star /></el-icon>
                       评分
@@ -107,6 +107,10 @@
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
+                  <el-button size="small" v-else disabled class="rated-btn">
+                    <el-icon><Star /></el-icon>
+                    已评分 {{ '⭐'.repeat(message.rating) }}
+                  </el-button>
                 </el-button-group>
               </div>
             </div>
@@ -505,11 +509,23 @@ const copyMessage = async (content) => {
 // 给消息评分
 const rateMessage = async (message, rating) => {
   try {
-    await chatApi.messageFeedback(message.id, { rating })
-    ElMessage.success('评分成功')
+    const response = await chatApi.messageFeedback(message.id, { rating })
+
+    if (response.code === 200) {
+      ElMessage.success(`评分成功：${rating} 星`)
+
+      // 更新消息的评分状态
+      const messageIndex = messages.value.findIndex(m => m.id === message.id)
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].rating = rating
+      }
+    } else {
+      ElMessage.error(response.message || '评分失败')
+    }
   } catch (error) {
     console.error('评分失败:', error)
-    ElMessage.error('评分失败')
+    const errorMessage = error.backendMessage || error.message || '评分失败，请稍后重试'
+    ElMessage.error(errorMessage)
   }
 }
 
@@ -883,5 +899,19 @@ onMounted(async () => {
 .input-actions-right {
   display: flex;
   gap: 12px;
+}
+
+/* 已评分按钮样式 */
+.rated-btn {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+  border-color: #bae6fd !important;
+  color: #0284c7 !important;
+  cursor: not-allowed;
+}
+
+.rated-btn:hover {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
+  border-color: #bae6fd !important;
+  transform: none !important;
 }
 </style>

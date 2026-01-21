@@ -2,6 +2,7 @@ import logging
 from sqlite3 import IntegrityError
 
 from flask import Blueprint, request, app
+from flask_jwt_extended import jwt_required, get_jwt_identity, current_user
 from marshmallow import ValidationError
 
 from blues_aka.common.exception import BusinessException
@@ -207,7 +208,15 @@ def update_user(id):
                 raise BusinessException(code=409, message="邮箱已被使用", error_code="EMAIL_EXISTS")
 
         for key, value in validated_user.items():
-            if hasattr(user, key):
+            # 特殊处理密码字段
+            if key == 'password':
+                if value:  # 如果提供了新密码
+                    try:
+                        user.set_password(value)
+                    except ValueError as e:
+                        logger.warning(f"密码强度不足: {str(e)}")
+                        raise BusinessException(400, str(e), "WEAK_PASSWORD")
+            elif hasattr(user, key):
                 setattr(user, key, value)
 
         db.session.commit()
@@ -267,6 +276,52 @@ def delete_user(id):
         logger.error(f"用户删除失败: {str(e)}", exc_info=True)
         raise BusinessException(code=500, message="用户删除失败", error_code="USER_DELETE_FAILED")
 
+@user_bp.route('/users/<int:id>/change-password', methods=['POST'])
+@jwt_required()
+@handle_api_response
+def change_password(id):
+    """修改用户密码"""
+    try:
+        user_id = get_jwt_identity()
+        logger.info(f"用户 {user_id} 尝试修改用户 {id} 的密码")
 
+        if id != user_id and not current_user.is_admin:
+            logger.warning(f"用户 {user_id} 无权修改用户 {id} 的密码")
+            raise BusinessException(403, "无权限", "FORBIDDEN")
+
+        user = User.query.get(id)
+        if not user:
+            logger.warning(f"用户 {id} 不存在")
+            raise BusinessException(404, "用户不存在", "USER_NOT_FOUND")
+
+        json_data = request.get_json()
+        current_password = json_data.get('password')
+        new_password = json_data.get('new_password')
+
+        if not current_password or not new_password:
+            logger.warning("密码参数不完整")
+            raise BusinessException(400, "密码参数不完整", "INVALID_PARAMS")
+
+        logger.info(f"验证用户 {user.username} 的当前密码")
+        if not user.check_password(current_password):
+            logger.warning(f"用户 {user.username} 的当前密码验证失败")
+            raise BusinessException(400, "当前密码不正确", "INVALID_CURRENT_PASSWORD")
+
+        try:
+            logger.info(f"为用户 {user.username} 设置新密码")
+            user.set_password(new_password)
+            db.session.commit()
+            logger.info(f"用户 {user.username} 密码修改成功")
+            return success(message="密码修改成功")
+
+        except ValueError as e:
+            logger.warning(f"新密码强度不足: {str(e)}")
+            raise BusinessException(400, str(e), "WEAK_PASSWORD")
+
+    except BusinessException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"密码修改失败: {str(e)}", exc_info=True)
+        raise BusinessException(500, "密码修改失败", "PASSWORD_CHANGE_FAILED")
 
 

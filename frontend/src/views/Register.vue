@@ -65,6 +65,13 @@
               autocomplete="new-password"
             />
           </div>
+          <!-- 密码强度指示器 -->
+          <PasswordStrength
+            v-if="registerForm.password"
+            :password="registerForm.password"
+            :show-details="true"
+            :show-hints="true"
+          />
         </el-form-item>
 
         <el-form-item prop="confirmPassword">
@@ -142,9 +149,14 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import PasswordStrength from '../components/PasswordStrength.vue'
+import { validatePassword } from '../utils/password'
 
 export default {
   name: 'Register',
+  components: {
+    PasswordStrength
+  },
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
@@ -158,17 +170,6 @@ export default {
       password: '',
       confirmPassword: ''
     })
-
-    // 密码确认验证器
-    const validateConfirmPassword = (rule, value, callback) => {
-      if (value === '') {
-        callback(new Error('请再次输入密码'))
-      } else if (value !== registerForm.password) {
-        callback(new Error('两次输入密码不一致'))
-      } else {
-        callback()
-      }
-    }
 
     // 邮箱格式验证器
     const validateEmail = (rule, value, callback) => {
@@ -194,15 +195,23 @@ export default {
       ],
       password: [
         { required: true, message: '请输入密码', trigger: 'blur' },
-        { min: 8, max: 128, message: '密码长度至少8位，最多128个字符', trigger: 'blur' },
-        {
-          pattern: /^(?=.*[a-zA-Z])(?=.*\d)/,
-          message: '密码必须包含至少一个字母和一个数字',
-          trigger: 'blur'
-        }
+        { validator: validatePassword, trigger: 'blur' }
       ],
       confirmPassword: [
-        { validator: validateConfirmPassword, trigger: 'blur' }
+        {
+          validator: (rule, value, callback) => {
+            if (!value) {
+              callback(new Error('请再次输入密码'))
+              return
+            }
+            if (value !== registerForm.password) {
+              callback(new Error('两次输入的密码不一致'))
+            } else {
+              callback()
+            }
+          },
+          trigger: 'blur'
+        }
       ]
     }
 
@@ -237,7 +246,8 @@ export default {
       loading,
       registerForm,
       registerRules,
-      handleRegister
+      handleRegister,
+      PasswordStrength
     }
   }
 }

@@ -67,6 +67,11 @@ export const userApi = {
   // 删除用户
   deleteUser(id) {
     return api.delete(`/user/users/${id}`)
+  },
+
+  // 修改密码
+  changePassword(id, data) {
+    return api.post(`/user/users/${id}/change-password`, data)
   }
 }
 

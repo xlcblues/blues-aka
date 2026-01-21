@@ -1,20 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mkdir:*)",
-      "Bash(npm run dev)",
-      "Bash(find:*)",
-      "Bash(python:*)",
-      "Bash(curl:*)",
-      "Bash(pip install:*)",
-      "Bash(timeout:*)",
-      "Bash(findstr:*)",
-      "Bash(cd:*)",
-      "Bash(iconv:*)",
-      "Bash(git checkout:*)",
-      "Bash(for file in *.py)",
-      "Bash(do echo \"=== Checking $file ===\")",
-      "Bash(done:*)"
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
