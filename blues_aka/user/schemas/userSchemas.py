@@ -1,12 +1,12 @@
 from marshmallow import Schema, fields, validate, validates_schema, ValidationError
 
 class userQuerySchema(Schema):
-    # 查询参数
+    # 查询参数 - 添加长度限制以防止ReDoS攻击和数据库资源消耗
     id = fields.Integer()
-    username = fields.String()
-    email = fields.String()
-    nickname = fields.String()
-    phone = fields.String()
+    username = fields.String(validate=validate.Length(max=50))
+    email = fields.String(validate=validate.Length(max=100))
+    nickname = fields.String(validate=validate.Length(max=100))
+    phone = fields.String(validate=validate.Length(max=20))
 
     # 分页参数
     page = fields.Integer(validate=validate.Range(min=1))

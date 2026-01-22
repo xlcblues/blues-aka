@@ -32,21 +32,29 @@ def get_users():
         # 构建查询
         query = User.query
 
-        # 构建查询条件
+        # 构建查询条件 - 双重保护：schema验证 + 手动限制长度
         if query_params.get('id'):
             query = query.filter(User.id == query_params.get('id'))
 
         if query_params.get('username'):
-            query = query.filter(User.username.like(f"%{query_params.get('username')}%"))
+            # 额外限制长度防止超长输入（与schema中的max=50对应）
+            username = query_params.get('username')[:50]
+            query = query.filter(User.username.like(f"%{username}%"))
 
         if query_params.get('email'):
-            query = query.filter(User.email.like(f"%{query_params.get('email')}%"))
+            # 额外限制长度防止超长输入（与schema中的max=100对应）
+            email = query_params.get('email')[:100]
+            query = query.filter(User.email.like(f"%{email}%"))
 
         if query_params.get('nickname'):
-            query = query.filter(User.nickname.like(f"%{query_params.get('nickname')}%"))
+            # 额外限制长度防止超长输入（与schema中的max=100对应）
+            nickname = query_params.get('nickname')[:100]
+            query = query.filter(User.nickname.like(f"%{nickname}%"))
 
         if query_params.get('phone'):
-            query = query.filter(User.phone.like(f"%{query_params.get('phone')}%"))
+            # 额外限制长度防止超长输入（与schema中的max=20对应）
+            phone = query_params.get('phone')[:20]
+            query = query.filter(User.phone.like(f"%{phone}%"))
 
         # 定义允许排序的字段
         ALLOWED_SORT_FIELDS = {
