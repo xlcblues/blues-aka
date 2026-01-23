@@ -29,8 +29,8 @@ def get_users():
         query_schemas = userQuerySchema()
         query_params = query_schemas.load(request.args)
 
-        # 构建查询
-        query = User.query
+        # 构建查询，默认过滤已删除的用户
+        query = User.query.filter(User.status != 'deleted')
 
         # 构建查询条件 - 双重保护：schema验证 + 手动限制长度
         if query_params.get('id'):
@@ -257,23 +257,25 @@ def update_user(id):
 @require_admin
 def delete_user(id):
     """
-    删除用户接口
-    根据用户ID删除用户
+    软删除用户接口
+    根据用户ID软删除用户（不会物理删除数据）
     """
     try:
         user = User.query.get(id)
         if not user:
             raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
 
-        db.session.delete(user)
+        # 检查用户是否已被删除
+        if user.is_deleted:
+            raise BusinessException(code=400, message="用户已被删除", error_code="USER_ALREADY_DELETED")
+
+        # 执行软删除
+        user.soft_delete()
         db.session.commit()
 
-        return success(message='用户删除成功！')
+        logger.info(f"用户 {user.username} (ID: {id}) 已被软删除")
 
-    except IntegrityError as e:
-        db.session.rollback()
-        logger.error(f"数据库完整性错误: {str(e)}")
-        raise BusinessException(code=409, message="用户删除失败，存在关联数据", error_code="DATABASE_INTEGRITY_ERROR")
+        return success(message='用户删除成功！')
 
     except BusinessException as e:
         # 已知的业务异常，直接抛出
@@ -283,6 +285,39 @@ def delete_user(id):
         db.session.rollback()
         logger.error(f"用户删除失败: {str(e)}", exc_info=True)
         raise BusinessException(code=500, message="用户删除失败", error_code="USER_DELETE_FAILED")
+
+# 恢复已删除的用户
+@user_bp.route('/users/<int:id>/restore', methods=['POST'])
+@handle_api_response
+@require_admin
+def restore_user(id):
+    """
+    恢复已软删除的用户接口
+    """
+    try:
+        user = User.query.get(id)
+        if not user:
+            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+
+        # 检查用户是否已被删除
+        if not user.is_deleted:
+            raise BusinessException(code=400, message="用户未被删除，无需恢复", error_code="USER_NOT_DELETED")
+
+        # 执行恢复
+        user.restore()
+        db.session.commit()
+
+        logger.info(f"用户 {user.username} (ID: {id}) 已恢复")
+
+        return success(message='用户恢复成功！')
+
+    except BusinessException as e:
+        raise e
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"用户恢复失败: {str(e)}", exc_info=True)
+        raise BusinessException(code=500, message="用户恢复失败", error_code="USER_RESTORE_FAILED")
 
 @user_bp.route('/users/<int:id>/change-password', methods=['POST'])
 @jwt_required()

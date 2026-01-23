@@ -41,6 +41,7 @@ class User(db.Model):
     # 时间戳
     created_at = db.Column(db.DateTime, default=func.now(), nullable=False, index=True)
     updated_at = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)  # 软删除时间戳
 
     def __repr__(self):
         return f'<User {self.username}>'
@@ -54,6 +55,28 @@ class User(db.Model):
 
     def check_password(self, password) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    def soft_delete(self):
+        """
+        软删除用户
+        将用户状态设置为deleted,并记录删除时间
+        """
+        self.status = 'deleted'
+        self.deleted_at = func.now()
+
+    def restore(self):
+        """
+        恢复已软删除的用户
+        """
+        self.status = 'active'
+        self.deleted_at = None
+
+    @property
+    def is_deleted(self):
+        """
+        检查用户是否已被软删除
+        """
+        return self.status == 'deleted' or self.deleted_at is not None
 
     @staticmethod
     def is_strong_password(password) -> bool:
