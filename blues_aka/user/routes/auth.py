@@ -6,7 +6,9 @@ from flask_jwt_extended import create_refresh_token, create_access_token, get_jw
 from marshmallow import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from blues_aka.common.error_codes import ErrorCodes
 from blues_aka.common.exception import BusinessException
+from blues_aka.common.exceptions import Exceptions, E
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.extensions import db
@@ -32,9 +34,9 @@ def login():
         logger.info("校验中")
 
         if not user:
-            raise BusinessException(400, '找不到用户', 'USER_NOT_FOUND')
+            raise E.User.user_not_found()
         if not user.check_password(password):
-            raise BusinessException(401, '用户名或密码错误', 'INVALID_CREDENTIALS')
+            raise E.User.invalid_credentials()
 
         # 使用 user.id 作为 JWT identity
         access_token = create_access_token(identity=user.id)
@@ -53,7 +55,7 @@ def login():
         return success(data=data)
 
     except BusinessException as e:
-        raise e
+        raise E.User.invalid_credentials()
 
     except Exception as e:
         raise e
@@ -71,7 +73,7 @@ def logout():
         raise e
 
     except Exception as e:
-        raise e
+        raise E.Common.internal_server_error()
 
 @auth_bp.route('/register', methods=['POST'])
 @handle_api_response
@@ -85,7 +87,7 @@ def register():
 
         user = User.query.filter_by(username=username).first()
         if user:
-            raise BusinessException(400, "用户名已存在", "USERNAME_EXISTS")
+            raise E.User.duplicate_username()
 
         user = User(username=username, email=email)
         user.set_password(password)
@@ -98,12 +100,12 @@ def register():
 
     except ValidationError as e:
         logger.warning(f"用户创建参数验证失败: {e.messages}")
-        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
+        raise E.Common.invalid_params()
 
     except IntegrityError as e:
         db.session.rollback()
         logger.error(f"数据库完整性错误: {str(e)}")
-        raise BusinessException(code=409, message="用户创建失败，数据冲突", error_code="DATABASE_INTEGRITY_ERROR")
+        raise E.Common.database_error()
 
     except BusinessException as e:
         raise e
@@ -126,7 +128,7 @@ def get_current_user():
         user = User.query.get(current_user_id)
 
         if not user:
-            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+            raise E.User.user_not_found()
 
         # 返回用户基本信息，包含is_admin字段
         user_data = {
@@ -149,5 +151,5 @@ def get_current_user():
 
     except Exception as e:
         logger.error(f"获取当前用户信息失败: {str(e)}", exc_info=True)
-        raise BusinessException(code=500, message="获取用户信息失败", error_code="GET_USER_INFO_FAILED")
+        raise BusinessException(code=500, message="获取用户信息失败", error_code=ErrorCodes.User.USER_QUERY_FAILED)
 

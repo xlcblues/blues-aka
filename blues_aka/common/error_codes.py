@@ -272,7 +272,6 @@ ERROR_CODE_HTTP_MAP = {
     ErrorCodes.User.TOKEN_EXPIRED: 401,
     ErrorCodes.User.TOKEN_INVALID: 401,
     ErrorCodes.User.TOKEN_MISSING: 401,
-    ErrorCodes.User.UNAUTHORIZED: 401,
     ErrorCodes.User.WEAK_PASSWORD: 400,
     ErrorCodes.User.PASSWORD_SAME_AS_OLD: 400,
     ErrorCodes.User.INVALID_CURRENT_PASSWORD: 400,
