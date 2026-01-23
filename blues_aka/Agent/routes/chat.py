@@ -67,9 +67,18 @@ def chat(conversation_id):
                 # 注意：temperature 和 max_tokens 应该在模型层面配置，不传给 BaseAgent
             }
         elif conversation.model:
-            agent_config = {
-                'model': conversation.model
-            }
+            agent_config = {'model': conversation.model}
+
+        # RAG配置
+        if conversation.enable_rag and conversation.rag_index_name:
+            agent_config['enable_rag'] = True
+            agent_config['rag_index_name'] = conversation.rag_index_name
+
+            if conversation.rag_config:
+                try:
+                    agent_config['rag_config'] = json.loads(conversation.rag_config)
+                except json.JSONDecodeError:
+                    logger.warning("RAG配置JSON解析失败，使用默认配置")
 
         # 创建agent实例
         agent = BaseAgent(**agent_config)
@@ -257,6 +266,18 @@ def regenerate_message(conversation_id):
             }
         elif conversation.model:
             agent_config = {'model': conversation.model}
+
+        if conversation.enable_rag and conversation.rag_index_name:
+            agent_config['enable_rag'] = True
+            agent_config['rag_index_name'] = conversation.rag_index_name
+
+            # 解析RAG配置
+            if conversation.rag_config:
+                import json
+                try:
+                    agent_config['rag_config'] = json.loads(conversation.rag_config)
+                except json.JSONDecodeError:
+                    logger.warning("RAG配置JSON解析失败，使用默认配置")
 
         agent = BaseAgent(**agent_config)
 

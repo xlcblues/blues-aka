@@ -42,6 +42,11 @@ class Agent(db.Model):
     created_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
+    # rag配置
+    enable_rag = Column(Boolean, default=False)
+    rag_index_name = Column(String(100))
+    rag_config = Column(Text)  # JSON: {"search_type": "similarity", "k": 4}
+
     # 关系
     user = db.relationship('User', backref=db.backref('agents', lazy='dynamic', cascade='all, delete-orphan'))
     conversations = db.relationship('Conversation', back_populates='agent', cascade='all, delete-orphan')

@@ -11,6 +11,9 @@ from blues_aka.config.config import ConfigFactory
 from blues_aka.core.prompts import get_prompt_with_tools, get_system_prompt
 from blues_aka.core.tools import BASIC_TOOLS
 from blues_aka.core.models import get_chat_model
+from blues_aka.rag.embeddings import get_embeddings
+from blues_aka.rag.index_manager import IndexManager
+from blues_aka.rag.retrievers import create_retriever, create_retriever_tool
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,9 @@ class BaseAgent:
             system_prompt: Optional[str] = None,
             prompt_mode: str = "default",
             debug: bool = False,
+            enable_rag: bool = False,
+            rag_index_name: Optional[str] = None,
+            rag_config: Optional[dict] = None,
             **kwargs: Any):
 
         # 初始化模型 - 将字符串转换为模型实例
@@ -57,6 +63,9 @@ class BaseAgent:
         if self.tools:
             tool_names = [tool.name for tool in self.tools]
             logger.debug(f"   工具列表: {', '.join(tool_names)}")
+
+        # RAG
+
 
         # 初始化提示词
         if system_prompt is None:
@@ -245,6 +254,32 @@ class BaseAgent:
             error_msg = f"Agent 异步流式执行失败: {str(e)}"
             logger.error(f"{error_msg}")
             yield f"\n\n抱歉，处理您的请求时出现错误: {str(e)}"
+
+    def _create_rag_tool(self, index_name: str, config: Optional[dict] = None):
+        """创建RAG检索工具"""
+        try:
+            embeddings = get_embeddings()
+            index_manager = IndexManager()
+
+            if not index_manager.index_exists(index_name):
+                logger.error(f"RAG索引不存在: {index_name}")
+                return None
+
+            vector_store = index_manager.load_index(index_name, embeddings=embeddings)
+            retriever_config = config or {}
+            retriever = create_retriever(vector_store=vector_store, **retriever_config)
+            tool = create_retriever_tool(
+                retriever=retriever,
+                name="knowledge_base",
+                description="搜索知识库中的相关信息，用于回答基于文档的问题"
+            )
+
+            logger.info(f"RAG工具创建成功: {index_name}")
+            return tool
+
+        except Exception as e:
+            logger.error(f"创建RAG工具失败: {e}")
+            return None
 
 # 创建智能体
 def create_base_agent(

@@ -6,6 +6,9 @@ class CreateConversationSchema(Schema):
     agent_id = fields.Int()
     description = fields.Str(validate=validate.Length(max=1000))
     model = fields.Str()
+    enable_rag = fields.Bool(missing=False)
+    rag_index_name = fields.Str()
+    rag_config = fields.Dict()  # 可选的RAG配置
 
     @validates('agent_id')
     def validate_agent_id(self, value):
