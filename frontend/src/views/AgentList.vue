@@ -1,14 +1,33 @@
 <template>
   <div class="page-container">
+    <!-- 页面头部 -->
     <div class="page-header">
-      <h2 class="page-title">
-        <el-icon><Avatar /></el-icon>
-        智能体管理
-      </h2>
-      <el-button type="primary" @click="showCreateDialog">
-        <el-icon><Plus /></el-icon>
-        创建智能体
-      </el-button>
+      <div class="header-left">
+        <h2 class="page-title">
+          <el-icon class="title-icon"><Avatar /></el-icon>
+          智能体管理
+        </h2>
+      </div>
+      <div class="header-right">
+        <el-radio-group v-model="viewMode" @change="handleViewModeChange" class="view-mode-selector" size="large">
+          <el-radio-button value="all">
+            <el-icon><Grid /></el-icon>
+            <span>全部智能体</span>
+          </el-radio-button>
+          <el-radio-button value="mine">
+            <el-icon><User /></el-icon>
+            <span>我的智能体</span>
+          </el-radio-button>
+          <el-radio-button value="public">
+            <el-icon><Open /></el-icon>
+            <span>公开智能体</span>
+          </el-radio-button>
+        </el-radio-group>
+        <el-button type="primary" size="large" @click="showCreateDialog" class="create-btn">
+          <el-icon><Plus /></el-icon>
+          <span>创建智能体</span>
+        </el-button>
+      </div>
     </div>
 
     <!-- 智能体表格 -->
@@ -19,6 +38,7 @@
         stripe
         style="width: 100%"
         class="agent-table"
+        :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: '600' }"
       >
         <el-table-column prop="id" label="#" width="80" align="center">
           <template #default="{ row }">
@@ -84,24 +104,29 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="startChat(row)">
-              <el-icon><ChatDotRound /></el-icon>
-              对话
-            </el-button>
-            <el-button type="info" size="small" @click="viewAgent(row)">
-              <el-icon><View /></el-icon>
-              详情
-            </el-button>
-            <el-button type="warning" size="small" @click="editAgent(row)">
-              <el-icon><Edit /></el-icon>
-              编辑
-            </el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>
-              删除
-            </el-button>
+            <div class="action-buttons">
+              <el-button type="primary" size="small" @click="startChat(row)" link>
+                <el-icon><ChatDotRound /></el-icon>
+                对话
+              </el-button>
+              <el-divider direction="vertical" />
+              <el-button type="primary" size="small" @click="viewAgent(row)" link>
+                <el-icon><View /></el-icon>
+                详情
+              </el-button>
+              <el-divider direction="vertical" />
+              <el-button type="warning" size="small" @click="editAgent(row)" link>
+                <el-icon><Edit /></el-icon>
+                编辑
+              </el-button>
+              <el-divider direction="vertical" />
+              <el-button type="danger" size="small" @click="handleDelete(row)" link>
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -259,6 +284,7 @@ const agents = ref([])
 const currentPage = ref(1)
 const pageSize = ref(12)
 const total = ref(0)
+const viewMode = ref('all') // 'all' | 'mine' | 'public'
 
 // 对话框状态
 const dialogVisible = ref(false)
@@ -298,10 +324,23 @@ const rules = {
 const fetchAgents = async () => {
   try {
     loading.value = true
-    const response = await agentApi.getAgents({
+
+    // 根据视图模式构建参数
+    let params = {
       page: currentPage.value,
       size: pageSize.value
-    })
+    }
+
+    // 根据视图模式添加 is_public 参数
+    // 注意: 只有明确需要时才添加 is_public 参数
+    if (viewMode.value === 'public') {
+      params.is_public = 'true'  // 字符串 'true' 表示只要公开的
+    } else if (viewMode.value === 'mine') {
+      params.is_public = 'false'  // 字符串 'false' 表示只要自己的
+    }
+    // viewMode === 'all' 时不传 is_public 参数,默认返回公开的+自己的
+
+    const response = await agentApi.getAgents(params)
 
     if (response.code === 200) {
       agents.value = response.data.items
@@ -315,6 +354,12 @@ const fetchAgents = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// 处理视图模式切换
+const handleViewModeChange = () => {
+  currentPage.value = 1 // 重置到第一页
+  fetchAgents()
 }
 
 // 显示创建对话框
@@ -423,45 +468,137 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 页面容器 */
+.page-container {
+  padding: 24px;
+  background: #f5f7fa;
+  min-height: 100vh;
+}
+
+/* 页面头部 */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-icon {
+  font-size: 28px;
+  color: #409eff;
+}
+
+/* 视图模式选择器 */
+.view-mode-selector {
+  display: flex;
+  align-items: center;
+}
+
+.view-mode-selector :deep(.el-radio-button__inner) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s;
+}
+
+.view-mode-selector :deep(.el-radio-button__inner:hover) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(64, 158, 255, 0.2);
+}
+
+.view-mode-selector :deep(.el-icon) {
+  font-size: 16px;
+}
+
+/* 创建按钮 */
+.create-btn {
+  font-weight: 500;
+  padding: 12px 24px;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+  transition: all 0.3s;
+}
+
+.create-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.4);
+}
+
+/* 表格容器 */
 .table-container {
   background: white;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  margin-bottom: 24px;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
 }
 
 .agent-table {
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
-.agent-table :deep(.el-table__header) {
-  background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%);
+.agent-table :deep(.el-table__header-wrapper) {
+  border-radius: 8px 8px 0 0;
 }
 
 .agent-table :deep(.el-table__header th) {
-  background: transparent;
-  border-bottom: 2px solid #4299e1;
-  font-weight: 600;
-  color: #2d3748;
-  font-size: 15px;
+  border-bottom: 2px solid #e4e7ed;
+  font-size: 14px;
+  padding: 16px 0;
+}
+
+.agent-table :deep(.el-table__body td) {
+  padding: 14px 0;
 }
 
 .agent-table :deep(.el-table__row:hover) {
-  background-color: #f7fafc;
+  background-color: #f5f7fa !important;
 }
 
+.agent-table :deep(.el-table__row) {
+  transition: background-color 0.25s ease;
+}
+
+/* 表格内容样式 */
 .agent-id {
   color: #909399;
   font-weight: 600;
+  font-size: 13px;
 }
 
 .table-avatar {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   font-size: 24px;
   font-weight: 600;
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
 }
 
 .name-cell {
@@ -472,7 +609,7 @@ onMounted(() => {
 
 .name-text {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
   color: #303133;
 }
 
@@ -480,13 +617,19 @@ onMounted(() => {
   color: #606266;
   font-size: 14px;
   line-height: 1.6;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .stats-cell {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 13px;
   color: #909399;
 }
 
@@ -497,36 +640,73 @@ onMounted(() => {
   justify-content: center;
 }
 
-.pagination-container {
-  margin-top: 24px;
+/* 操作按钮 */
+.action-buttons {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.action-buttons .el-button {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.action-buttons .el-button:hover {
+  transform: scale(1.05);
+}
+
+.action-buttons .el-divider--vertical {
+  height: 16px;
+  margin: 0 4px;
+}
+
+/* 分页 */
+.pagination-container {
+  margin-top: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: center;
+}
+
+.pagination-container :deep(.el-pagination) {
   justify-content: center;
 }
 
 /* 详情对话框样式 */
 .agent-detail {
-  padding: 20px;
+  padding: 24px;
 }
 
 .detail-header {
   display: flex;
   align-items: center;
-  gap: 28px;
-  margin-bottom: 36px;
-  padding-bottom: 28px;
-  border-bottom: 1px solid #ebeef5;
+  gap: 24px;
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 2px solid #e4e7ed;
+}
+
+.detail-header .el-avatar {
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .header-info h2 {
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
   color: #303133;
-  font-size: 28px;
+  font-size: 26px;
+  font-weight: 600;
 }
 
 .header-info p {
   margin: 0;
   color: #909399;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .prompt-text {
@@ -535,19 +715,65 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.8;
-  font-size: 15px;
+  font-size: 14px;
+  color: #606266;
+  background: #f5f7fa;
+  padding: 16px;
+  border-radius: 8px;
 }
 
 .detail-actions {
-  margin-top: 36px;
+  margin-top: 32px;
   display: flex;
-  gap: 16px;
+  gap: 12px;
   justify-content: center;
+  padding-top: 24px;
+  border-top: 1px solid #e4e7ed;
 }
 
 .form-tip {
   margin-left: 12px;
-  font-size: 14px;
+  font-size: 13px;
   color: #909399;
+}
+
+/* 表单对话框优化 */
+:deep(.el-dialog__header) {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+:deep(.el-dialog__body) {
+  padding: 24px;
+}
+
+:deep(.el-dialog__footer) {
+  padding: 16px 24px 24px;
+  border-top: 1px solid #e4e7ed;
+}
+
+:deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #606266;
+}
+
+:deep(.el-textarea__inner) {
+  border-radius: 6px;
+}
+
+:deep(.el-input__inner) {
+  border-radius: 6px;
+}
+
+/* 标签优化 */
+:deep(.el-tag) {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* 头像优化 */
+:deep(.el-avatar) {
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>

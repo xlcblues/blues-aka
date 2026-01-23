@@ -67,16 +67,30 @@ def get_agent():
         user_id = get_jwt_identity()
         page = request.args.get('page', 1, type=int)
         page_size = request.args.get('size', 20, type=int)  # 前端发送的是 'size'
-        is_public = request.args.get('is_public', type=bool)
+
+        # 处理 is_public 参数,支持字符串和布尔值
+        is_public_param = request.args.get('is_public')
+        is_public = None
+        if is_public_param is not None:
+            # 将字符串转换为布尔值
+            if is_public_param.lower() in ['true', '1', 'yes']:
+                is_public = True
+            elif is_public_param.lower() in ['false', '0', 'no']:
+                is_public = False
+
+        logger.info(f"查询智能体列表 - user_id: {user_id}, is_public_param: {is_public_param}, is_public: {is_public}")
 
         query = Agent.query
 
-        if is_public:
-            # 查询公开的智能体或自己的智能体
-            query = query.filter((Agent.is_public == True) | (Agent.user_id == user_id))
-        else:
-            # 只查询自己的智能体
+        if is_public is True:
+            # 查询所有公开的智能体(包含自己的)
+            query = query.filter(Agent.is_public == True)
+        elif is_public is False:
+            # 只查询自己的智能体(不论是否公开)
             query = query.filter(Agent.user_id == user_id)
+        else:
+            # is_public为None时,查询公开的智能体或自己的智能体
+            query = query.filter((Agent.is_public == True) | (Agent.user_id == user_id))
 
         pagination = query.order_by(Agent.created_at.desc()).paginate(page=page, per_page=page_size, error_out=False)
 
