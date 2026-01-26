@@ -6,11 +6,7 @@ from langchain_core.vectorstores import VectorStore
 from langchain_core.tools.retriever import create_retriever_tool as lc_create_retriever_tool
 from langchain_classic.retrievers import EnsembleRetriever
 
-
-from blues_aka import ConfigFactory
-
 logger = logging.getLogger(__name__)
-_config = ConfigFactory.get_config()
 
 # 检索类型
 SearchType = Literal["similarity", "mmr", "similarity_score_threshold"]
@@ -24,6 +20,9 @@ def create_retriever(
     **kwargs,
 ) -> BaseRetriever:
     """从向量库创建检索器"""
+    from blues_aka import ConfigFactory
+    _config = ConfigFactory.get_config()
+
     search_type =search_type or _config.retriever_search_type
     k = k or _config.retriever_k
     score_threshold = score_threshold or _config.retriever_score_threshold

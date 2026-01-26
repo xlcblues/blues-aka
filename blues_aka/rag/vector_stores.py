@@ -7,8 +7,6 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore, InMemoryVectorStore
 
-from blues_aka import ConfigFactory
-
 try:
     from langchain_community.vectorstores import FAISS
     FAISS_AVAILABLE = True
@@ -16,7 +14,7 @@ except ImportError:
     FAISS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
-_config = ConfigFactory.get_config()
+
 # 向量库类型
 VectorStoreType = Literal["faiss", "inmemory"]
 
@@ -27,6 +25,9 @@ def create_vector_store(
     **kwargs,
 ) -> VectorStore:
     """从文档创建向量存储"""
+    from blues_aka import ConfigFactory
+    _config = ConfigFactory.get_config()
+
     if documents is None:
         raise ValueError("文档列表不能为空")
     store_type = store_type or _config.vector_store_type
@@ -93,6 +94,9 @@ def load_vector_store(
     **kwargs,
 ) -> VectorStore:
     """从磁盘加载向量存储"""
+    from blues_aka import ConfigFactory
+    _config = ConfigFactory.get_config()
+
     load_path = Path(load_path)
 
     if not load_path.exists():

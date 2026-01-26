@@ -63,16 +63,28 @@ def login():
 @auth_bp.route('/logout', methods=['POST'])
 @handle_api_response
 def logout():
+    """
+    用户登出接口
+
+    注意：JWT 是无状态的，实际的登出需要在前端删除 token。
+    如果需要强制失效 token，应该实现 token 黑名单机制。
+
+    Returns:
+        Response: 包含用户 ID 的成功响应
+    """
     try:
         current_user_id = get_jwt_identity()
-        db.session.commit()
-        logger.info("登出成功！")
-        return success({'user_id': current_user_id})
+        logger.info(f"用户 {current_user_id} 登出成功")
+
+        # TODO: 实现 token 黑名单机制以强制失效 token
+        # 可以将 token 添加到 Redis 黑名单中，设置过期时间
+
+        return success({'user_id': current_user_id, 'message': '登出成功'})
 
     except BusinessException as e:
         raise e
-
     except Exception as e:
+        logger.error(f"登出失败: {str(e)}", exc_info=True)
         raise E.Common.internal_server_error()
 
 @auth_bp.route('/register', methods=['POST'])

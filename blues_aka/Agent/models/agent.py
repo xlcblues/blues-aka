@@ -73,7 +73,10 @@ class Agent(db.Model):
             'rating': float(self.rating) if self.rating else None,
             'config': self.config,
             'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'enable_rag': self.enable_rag if hasattr(self, 'enable_rag') else False,
+            'rag_index_name': self.rag_index_name if hasattr(self, 'rag_index_name') else None,
+            'rag_config': self.rag_config if hasattr(self, 'rag_config') else None
         }
 
     def increment_usage(self):

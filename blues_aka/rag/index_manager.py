@@ -8,18 +8,20 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
 
-from blues_aka import ConfigFactory
 from blues_aka.rag.vector_stores import create_vector_store, save_vector_store, delete_vector_store, load_vector_store, \
     add_documents_to_vector_store
 
 logger = logging.getLogger(__name__)
-_config = ConfigFactory.get_config()
+
 
 class IndexManager:
     """索引管理器"""
 
     def __init__(self, base_path: Optional[str] = None):
         """初始化索引管理器"""
+        from blues_aka import ConfigFactory
+        _config = ConfigFactory.get_config()
+
         self.base_path = Path(base_path or _config.vector_store_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"索引管理器初始化: {self.base_path}")
@@ -71,6 +73,9 @@ class IndexManager:
         **kwargs,
     ) -> VectorStore:
         """创建新索引"""
+        from blues_aka import ConfigFactory
+        _config = ConfigFactory.get_config()
+
         index_path = self._get_index_path(name)
 
         if index_path.exists() and not overwrite:

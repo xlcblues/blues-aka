@@ -4,16 +4,17 @@ from typing import Optional
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_core.embeddings import Embeddings
 
-from blues_aka import ConfigFactory
-
 logger = logging.getLogger(__name__)
-_config = ConfigFactory.get_config()
+
 
 def get_embeddings(
     model: Optional[str] = None,
     batch_size: Optional[int] = None,
     **kwargs,
 ) -> Embeddings:
+    from blues_aka import ConfigFactory
+    _config = ConfigFactory.get_config()
+
     """获取 Embedding 模型实例"""
     model = model or _config.embedding_model
     batch_size = batch_size or _config.embedding_batch_size
