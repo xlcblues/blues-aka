@@ -76,6 +76,8 @@ class ErrorCodes:
         USER_DELETE_FAILED = "200401"  # 用户删除失败
         USER_HAS_DEPENDENCIES = "200402"  # 用户存在关联数据
         USER_ALREADY_DELETED = "200403"  # 用户已删除
+        USER_NOT_DELETED = "200404" # 用户未删除（回复）
+        USER_RESTORE_FAILED = "200405" # 用户恢复失败
 
         # 用户认证异常 (2005xx)
         INVALID_CREDENTIALS = "200501"  # 用户名或密码错误

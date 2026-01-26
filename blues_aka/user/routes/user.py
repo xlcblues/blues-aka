@@ -5,7 +5,9 @@ from flask import Blueprint, request, app
 from flask_jwt_extended import jwt_required, get_jwt_identity, current_user
 from marshmallow import ValidationError
 
+from blues_aka.common.error_codes import ErrorCodes
 from blues_aka.common.exception import BusinessException
+from blues_aka.common.exceptions import Exceptions, E
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.common.utils import SortValidator, require_admin
@@ -101,11 +103,11 @@ def get_users():
         return success(data=response)
 
     except ValidationError as e:
-        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
+        raise E.Common.invalid_params()
 
     except Exception as e:
         # 其他异常
-        raise BusinessException(code=500, message="查询用户失败", error_code="USER_QUERY_FAILED")
+        raise BusinessException(code=500, message="查询用户失败", error_code=ErrorCodes.User.USER_QUERY_FAILED)
 
 
 # 创建新用户
@@ -121,7 +123,7 @@ def create_user():
         json_data = request.get_json()
 
         if json_data is None:
-            raise BusinessException(code=400, message="请求体不能为空", error_code="EMPTY_REQUEST_BODY")
+            raise E.Common.empty_request_body()
 
         # 参数校验
         create_user = userCreateSchema()
@@ -133,7 +135,7 @@ def create_user():
         ).first()
 
         if existing_user:
-            raise BusinessException(code=409, message="用户名已被使用", error_code="DUPLICATE_USERNAME")
+            raise E.User.duplicate_username()
 
         # 检查邮箱是否已存在
         existing_user = User.query.filter(
@@ -141,7 +143,7 @@ def create_user():
         ).first()
 
         if existing_user:
-            raise BusinessException(code=409, message="邮箱已被使用", error_code="DUPLICATE_EMAIL")
+            raise E.User.duplicate_email()
 
         # 创建用户对象，处理可选字段
         new_user = User(
@@ -167,12 +169,12 @@ def create_user():
 
     except ValidationError as e:
         logger.warning(f"用户创建参数验证失败: {e.messages}")
-        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
+        raise E.Common.invalid_params()
 
     except IntegrityError as e:
         db.session.rollback()
         logger.error(f"数据库完整性错误: {str(e)}")
-        raise BusinessException(code=409, message="用户创建失败，数据冲突", error_code="DATABASE_INTEGRITY_ERROR")
+        raise E.Common.database_error()
 
     except BusinessException as e:
         # 已知的业务异常，直接抛出
@@ -181,7 +183,7 @@ def create_user():
     except Exception as e:
         db.session.rollback()
         logger.error(f"用户创建失败: {str(e)}", exc_info=True)
-        raise BusinessException(code=500, message="用户创建失败", error_code="USER_CREATION_FAILED")
+        raise BusinessException(code=500, message="用户创建失败", error_code=ErrorCodes.User.USER_CREATION_FAILED)
 
 # 修改用户
 @user_bp.route('/users/<int:id>', methods=['PUT'])
@@ -190,11 +192,11 @@ def update_user(id):
     try:
         user = User.query.get(id)
         if not user:
-            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+            raise E.User.user_not_found()
 
         json_data = request.get_json()
         if json_data is None:
-            raise BusinessException(code=400, message="请求体不能为空", error_code="EMPTY_REQUEST_BODY")
+            raise E.Common.empty_request_body()
 
         update_schema = userUpdateSchema()
         validated_user = update_schema.load(json_data)
@@ -205,7 +207,7 @@ def update_user(id):
                 User.id != id
             ).first()
             if existing_user:
-                raise BusinessException(code=409, message="用户名已被使用", error_code="USERNAME_EXISTS")
+                raise E.User.duplicate_username()
 
         if 'email' in validated_user:
             existing_user = User.query.filter(
@@ -213,7 +215,7 @@ def update_user(id):
                 User.id != id
             ).first()
             if existing_user:
-                raise BusinessException(code=409, message="邮箱已被使用", error_code="EMAIL_EXISTS")
+                raise E.User.duplicate_email()
 
         for key, value in validated_user.items():
             # 特殊处理密码字段
@@ -223,7 +225,8 @@ def update_user(id):
                         user.set_password(value)
                     except ValueError as e:
                         logger.warning(f"密码强度不足: {str(e)}")
-                        raise BusinessException(400, str(e), "WEAK_PASSWORD")
+                        raise E.User.weak_password()
+
             elif hasattr(user, key):
                 setattr(user, key, value)
 
@@ -235,12 +238,13 @@ def update_user(id):
 
     except ValidationError as e:
         logger.warning(f"用户更新参数验证失败: {e.messages}")
-        raise BusinessException(code=400, message="参数校验失败", error_code="INVALID_PARAMS")
+        raise E.Common.invalid_params()
+
 
     except IntegrityError as e:
         db.session.rollback()
         logger.error(f"数据库完整性错误: {str(e)}")
-        raise BusinessException(code=409, message="用户更新失败，数据冲突", error_code="DATABASE_INTEGRITY_ERROR")
+        raise E.Common.database_error()
 
     except BusinessException as e:
         # 已知的业务异常，直接抛出
@@ -249,7 +253,7 @@ def update_user(id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"用户更新失败: {str(e)}", exc_info=True)
-        raise BusinessException(code=500, message="用户更新失败", error_code="USER_UPDATE_FAILED")
+        raise BusinessException(code=500, message="用户更新失败", error_code=ErrorCodes.User.USER_UPDATE_FAILED)
 
 # 删除用户
 @user_bp.route('/users/<int:id>', methods=['DELETE'])
@@ -263,11 +267,11 @@ def delete_user(id):
     try:
         user = User.query.get(id)
         if not user:
-            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+            raise E.User.user_not_found()
 
         # 检查用户是否已被删除
         if user.is_deleted:
-            raise BusinessException(code=400, message="用户已被删除", error_code="USER_ALREADY_DELETED")
+            raise BusinessException(code=400, message="用户已被删除", error_code=ErrorCodes.User.USER_ALREADY_DELETED)
 
         # 执行软删除
         user.soft_delete()
@@ -284,7 +288,7 @@ def delete_user(id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"用户删除失败: {str(e)}", exc_info=True)
-        raise BusinessException(code=500, message="用户删除失败", error_code="USER_DELETE_FAILED")
+        raise BusinessException(code=500, message="用户删除失败", error_code=ErrorCodes.User.USER_DELETE_FAILED)
 
 # 恢复已删除的用户
 @user_bp.route('/users/<int:id>/restore', methods=['POST'])
@@ -297,11 +301,11 @@ def restore_user(id):
     try:
         user = User.query.get(id)
         if not user:
-            raise BusinessException(code=404, message="用户不存在", error_code="USER_NOT_FOUND")
+            raise E.User.user_not_found()
 
         # 检查用户是否已被删除
         if not user.is_deleted:
-            raise BusinessException(code=400, message="用户未被删除，无需恢复", error_code="USER_NOT_DELETED")
+            raise BusinessException(code=400, message="用户未被删除，无需恢复", error_code=ErrorCodes.User.USER_NOT_DELETED)
 
         # 执行恢复
         user.restore()
@@ -317,7 +321,7 @@ def restore_user(id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"用户恢复失败: {str(e)}", exc_info=True)
-        raise BusinessException(code=500, message="用户恢复失败", error_code="USER_RESTORE_FAILED")
+        raise BusinessException(code=500, message="用户恢复失败", error_code=ErrorCodes.User.USER_RESTORE_FAILED)
 
 @user_bp.route('/users/<int:id>/change-password', methods=['POST'])
 @jwt_required()
@@ -330,12 +334,12 @@ def change_password(id):
 
         if id != user_id and not current_user.is_admin:
             logger.warning(f"用户 {user_id} 无权修改用户 {id} 的密码")
-            raise BusinessException(403, "无权限", "FORBIDDEN")
+            raise E.User.unauthorized()
 
         user = User.query.get(id)
         if not user:
             logger.warning(f"用户 {id} 不存在")
-            raise BusinessException(404, "用户不存在", "USER_NOT_FOUND")
+            raise E.User.user_not_found()
 
         json_data = request.get_json()
         current_password = json_data.get('password')
@@ -343,12 +347,12 @@ def change_password(id):
 
         if not current_password or not new_password:
             logger.warning("密码参数不完整")
-            raise BusinessException(400, "密码参数不完整", "INVALID_PARAMS")
+            raise E.Common.invalid_params()
 
         logger.info(f"验证用户 {user.username} 的当前密码")
         if not user.check_password(current_password):
             logger.warning(f"用户 {user.username} 的当前密码验证失败")
-            raise BusinessException(400, "当前密码不正确", "INVALID_CURRENT_PASSWORD")
+            raise E.User.invalid_current_password()
 
         try:
             logger.info(f"为用户 {user.username} 设置新密码")
@@ -359,12 +363,12 @@ def change_password(id):
 
         except ValueError as e:
             logger.warning(f"新密码强度不足: {str(e)}")
-            raise BusinessException(400, str(e), "WEAK_PASSWORD")
+            raise E.User.weak_password()
 
     except BusinessException as e:
         raise e
     except Exception as e:
         logger.error(f"密码修改失败: {str(e)}", exc_info=True)
-        raise BusinessException(500, "密码修改失败", "PASSWORD_CHANGE_FAILED")
+        raise E.User.password_change_failed()
 
 
