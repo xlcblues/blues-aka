@@ -133,33 +133,50 @@ def get_agent_detail(agent_id):
     except Exception as e:
         raise BusinessException(message=f"获取失败: {str(e)}")
 
+
 @agent_bp.route('/agents/<int:agent_id>', methods=['PUT'])
 @jwt_required()
 @handle_api_response
 def update_agent(agent_id):
     """更新智能体"""
     try:
+        # 记录请求开始，便于追踪请求链路
+        logger.info(f"开始处理更新智能体请求, ID: {agent_id}")
+
         schema = UpdateAgentSchema()
         data = schema.load(request.get_json())
 
         user_id = get_jwt_identity()
+
+        # 记录数据库查询操作
+        logger.info(f"正在查询智能体, ID: {agent_id}, 用户ID: {user_id}")
         agent = Agent.query.filter_by(id=agent_id, user_id=user_id).first()
 
         if agent is None:
+            # 使用 warning 级别记录业务逻辑上的“未找到”，这通常不是系统错误，但需要关注
+            logger.warning(f"智能体不存在, ID: {agent_id}, 用户ID: {user_id}")
             raise BusinessException(code=404, message="智能体不存在", error_code="AGENT_NOT_FOUND")
 
+        # 记录即将更新的字段，方便审计
+        logger.info(f"准备更新智能体属性, ID: {agent_id}, 更新字段: {list(data.keys())}")
         for key, value in data.items():
             if hasattr(agent, key):
                 setattr(agent, key, value)
 
         db.session.commit()
+        logger.info(f"智能体更新成功, ID: {agent_id}")
         return success(data=agent.to_dict(), message="智能体更新成功")
 
     except ValidationError as err:
+        # 记录数据校验失败的详细信息，包含具体的字段错误
+        logger.error(f"数据验证失败, ID: {agent_id}, 错误详情: {err.messages}", exc_info=True)
         raise BusinessException(message="数据验证失败", code=500, error_code=str(err))
     except Exception as e:
         db.session.rollback()
+        # 记录未捕获的系统异常，exc_info=True 会自动打印堆栈跟踪，这对调试至关重要
+        logger.error(f"更新智能体失败, ID: {agent_id}, 错误信息: {str(e)}", exc_info=True)
         raise BusinessException(message=f"更新失败: {str(e)}", code=400, error_code=str(e))
+
 
 @agent_bp.route('/agents/<int:agent_id>', methods=['DELETE'])
 @jwt_required()
