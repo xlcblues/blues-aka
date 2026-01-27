@@ -19,6 +19,12 @@ def get_embeddings(
     model = model or _config.embedding_model
     batch_size = batch_size or _config.embedding_batch_size
 
+    # 确保 batch_size 不超过 API 限制
+    max_batch_size = 64
+    if batch_size > max_batch_size:
+        logger.warning(f"batch_size {batch_size} 超过 API 限制 {max_batch_size}，已自动调整为 {max_batch_size}")
+        batch_size = max_batch_size
+
     logger.info(f"创建 Embedding 模型: {model}")
     logger.debug(f"batch_size: {batch_size}")
 

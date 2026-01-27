@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python:*)",
       "Bash(del:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

@@ -64,8 +64,19 @@ class BaseAgent:
             tool_names = [tool.name for tool in self.tools]
             logger.debug(f"   工具列表: {', '.join(tool_names)}")
 
-        # RAG
+        # RAG 配置处理
+        self.enable_rag = enable_rag
+        self.rag_index_name = rag_index_name
+        self.rag_config = rag_config or {}
 
+        if enable_rag and rag_index_name:
+            logger.info(f"启用 RAG 模式，索引名称: {rag_index_name}")
+            rag_tool = self._create_rag_tool(rag_index_name, rag_config)
+            if rag_tool:
+                self.tools.append(rag_tool)
+                logger.info(f"RAG 工具已添加到工具列表: {rag_tool.name}")
+            else:
+                logger.warning(f"RAG 工具创建失败，将继续使用基础工具")
 
         # 初始化提示词
         if system_prompt is None:
@@ -111,7 +122,7 @@ class BaseAgent:
             graph_input = {"messages": messages}
             graph_input.update(kwargs)
 
-            result = self.graph.invoke(**graph_input)
+            result = self.graph.invoke(graph_input)
             output_messages = result.get("messages", [])
 
             ai_response = ""

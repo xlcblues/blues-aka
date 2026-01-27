@@ -72,6 +72,7 @@ def create_custom_prompt(
 TOOL_USAGE_INSTRUCTIONS = """
 可用工具说明：
 - 🔍 web_search: 搜索互联网获取最新信息
+- 📚 knowledge_base: 搜索知识库中的相关信息，用于回答基于文档的问题
 - 🕐 get_current_time: 获取当前时间和日期（仅在需要精确时间戳时使用）
 - 🧮 calculator: 执行数学计算
 - 🌤️ get_daily_weather: 查询某一天的天气（今天/明天/后天）- **推荐用于天气查询**
@@ -80,6 +81,7 @@ TOOL_USAGE_INSTRUCTIONS = """
 
 使用工具的时机：
 - 需要最新信息或实时数据时，使用 web_search
+- 需要查找文档或知识库中的信息时，使用 knowledge_base
 - 需要知道当前时间或日期时，使用 get_current_time（注意：查询天气时不需要先调用此工具）
 - 需要精确计算时，使用 calculator
 - **天气查询规则（重要）**：

@@ -30,10 +30,17 @@ def chat(conversation_id):
         stream = data.get('stream', True)
         content = data.get('content')
 
+        logger.info(f"收到聊天请求 - conversation_id: {conversation_id}, user_id: {user_id}, stream: {stream}")
+        logger.info(f"消息内容: {content[:100]}..." if len(content) > 100 else f"消息内容: {content}")
+
         # 获取对话
         conversation = Conversation.query.filter_by(id=conversation_id, user_id=user_id).first()
         if not conversation:
+            logger.error(f"对话不存在 - conversation_id: {conversation_id}, user_id: {user_id}")
             raise BusinessException(code=404, message="对话不存在", error_code=404)
+
+        # 获取聊天历史（在保存当前用户消息之前）
+        chat_history = Message.get_message_history(conversation_id, limit=50)
 
         # 保存用户对话
         user_message = Message(
@@ -45,12 +52,10 @@ def chat(conversation_id):
         db.session.add(user_message)
         db.session.commit()
 
-        # 获取聊天历史
-        chat_history = Message.get_message_history(conversation_id, limit=50)
-
         # 获取智能体配置
         agent_config = {}
         if conversation.agent:
+            logger.info(f"使用智能体 - id: {conversation.agent.id}, name: {conversation.agent.name}, model: {conversation.agent.model}")
             # tools 从数据库读取的是 JSON，如果是 None 或空列表，不传递给 BaseAgent
             # 让 BaseAgent 使用默认的 BASIC_TOOLS
             tools_param = None
@@ -67,24 +72,48 @@ def chat(conversation_id):
                 # 注意：temperature 和 max_tokens 应该在模型层面配置，不传给 BaseAgent
             }
         elif conversation.model:
+            logger.info(f"使用对话模型 - model: {conversation.model}")
             agent_config = {'model': conversation.model}
 
-        # RAG配置
-        if conversation.enable_rag and conversation.rag_index_name:
-            agent_config['enable_rag'] = True
-            agent_config['rag_index_name'] = conversation.rag_index_name
+        # RAG配置 - 从 agent 获取 RAG 配置
+        if conversation.agent and hasattr(conversation.agent, 'enable_rag') and conversation.agent.enable_rag:
+            rag_index_name = getattr(conversation.agent, 'rag_index_name', None)
+            if rag_index_name:
+                logger.info(f"启用RAG - index_name: {rag_index_name}")
+                agent_config['enable_rag'] = True
+                agent_config['rag_index_name'] = rag_index_name
 
-            if conversation.rag_config:
-                try:
-                    agent_config['rag_config'] = json.loads(conversation.rag_config)
-                except json.JSONDecodeError:
-                    logger.warning("RAG配置JSON解析失败，使用默认配置")
+                rag_config = getattr(conversation.agent, 'rag_config', None)
+                if rag_config:
+                    try:
+                        agent_config['rag_config'] = json.loads(rag_config)
+                    except json.JSONDecodeError:
+                        logger.warning("RAG配置JSON解析失败，使用默认配置")
+
+        logger.info(f"创建 BaseAgent，配置: {agent_config}")
 
         # 创建agent实例
-        agent = BaseAgent(**agent_config)
+        try:
+            agent = BaseAgent(**agent_config)
+            logger.info("BaseAgent 创建成功")
+        except Exception as e:
+            logger.error(f"创建 BaseAgent 失败: {str(e)}", exc_info=True)
+            raise
         # 流式和非流式输出
         if stream:
-            return Response(stream_with_context(generate_streaming_response(agent, content, chat_history, conversation_id, user_id)), mimetype='text/event-stream')
+            try:
+                response = Response(
+                    stream_with_context(generate_streaming_response(agent, content, chat_history, conversation_id, user_id)),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
+                )
+                return response
+            except Exception as e:
+                logger.error(f"流式响应创建失败: {str(e)}", exc_info=True)
+                raise BusinessException(code=500, message=f"流式响应创建失败: {str(e)}")
         else:
             response_content = agent.invoke(input_text=content, chat_history=chat_history)
 
@@ -127,7 +156,12 @@ def chat(conversation_id):
 
 def generate_streaming_response(agent, content, chat_history, conversation_id, user_id):
     """生成流式响应"""
+    ai_message = None
+    message_id = None
     try:
+        logger.info(f"开始生成流式响应 - conversation_id: {conversation_id}")
+        logger.info(f"聊天历史长度: {len(chat_history)}")
+
         # 获取模型名称（从模型实例中提取）
         model_name = 'glm-4.5'
         if hasattr(agent.model, 'model_name'):
@@ -136,6 +170,8 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
             model_name = agent.model.model
         elif isinstance(agent.model, str):
             model_name = agent.model
+
+        logger.info(f"使用模型: {model_name}")
 
         # 创建并添加 AI 消息到数据库
         ai_message = Message(
@@ -157,37 +193,59 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
         yield f"data: {json.dumps({'type': 'start', 'message_id': message_id})}\n\n"
 
         # 流式生成响应
+        logger.info("开始流式生成...")
         full_content = []
-        for chunk in agent.streaming(input_text=content, chat_history=chat_history):
-            if chunk:  # 只处理非空内容
-                full_content.append(chunk)
-                # 发送 token 事件，包含实际内容
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        try:
+            for chunk in agent.streaming(input_text=content, chat_history=chat_history):
+                if chunk:  # 只处理非空内容
+                    full_content.append(chunk)
+                    # 发送 token 事件，包含实际内容
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+        except Exception as e:
+            logger.error(f"流式生成过程出错: {str(e)}", exc_info=True)
+            # 更新消息内容为错误信息
+            if ai_message and message_id:
+                try:
+                    final_content = f"错误: {str(e)}"
+                    ai_message.content = final_content
+                    db.session.add(ai_message)
+                    db.session.commit()
+                except:
+                    db.session.rollback()
+            raise
 
         # 更新消息内容
         final_content = ''.join(full_content)
-        ai_message.content = final_content
+        if ai_message and message_id:
+            ai_message.content = final_content
 
-        # 提交到数据库
-        db.session.add(ai_message)
-        db.session.commit()
-
-        logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
-
-        # 更新对话统计（不在这里 commit，避免在流式响应中操作数据库）
-        conversation = Conversation.query.get(conversation_id)
-        if conversation:
-            conversation.message_count = Message.query.filter_by(conversation_id=conversation_id).count()
-            conversation.last_message_at = func.now()
-            db.session.add(conversation)
+            # 提交到数据库
+            db.session.add(ai_message)
             db.session.commit()
+
+            logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
+
+            # 更新对话统计（不在这里 commit，避免在流式响应中操作数据库）
+            try:
+                conversation = Conversation.query.get(conversation_id)
+                if conversation:
+                    conversation.message_count = Message.query.filter_by(conversation_id=conversation_id).count()
+                    conversation.last_message_at = func.now()
+                    db.session.add(conversation)
+                    db.session.commit()
+            except Exception as db_error:
+                logger.error(f"更新对话统计失败: {str(db_error)}", exc_info=True)
+                db.session.rollback()
 
         # 发送结束事件
         yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n"
 
     except Exception as e:
-        logger.error(f"流式响应生成失败: {str(e)}")
-        db.session.rollback()
+        logger.error(f"流式响应生成失败: {str(e)}", exc_info=True)
+        try:
+            db.session.rollback()
+        except:
+            pass
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 @chat_bp.route('/conversations/<int:conversation_id>/messages', methods=['GET'])
@@ -267,17 +325,20 @@ def regenerate_message(conversation_id):
         elif conversation.model:
             agent_config = {'model': conversation.model}
 
-        if conversation.enable_rag and conversation.rag_index_name:
-            agent_config['enable_rag'] = True
-            agent_config['rag_index_name'] = conversation.rag_index_name
+        # RAG配置 - 从 agent 获取 RAG 配置
+        if conversation.agent and hasattr(conversation.agent, 'enable_rag') and conversation.agent.enable_rag:
+            rag_index_name = getattr(conversation.agent, 'rag_index_name', None)
+            if rag_index_name:
+                agent_config['enable_rag'] = True
+                agent_config['rag_index_name'] = rag_index_name
 
-            # 解析RAG配置
-            if conversation.rag_config:
-                import json
-                try:
-                    agent_config['rag_config'] = json.loads(conversation.rag_config)
-                except json.JSONDecodeError:
-                    logger.warning("RAG配置JSON解析失败，使用默认配置")
+                # 解析RAG配置
+                rag_config = getattr(conversation.agent, 'rag_config', None)
+                if rag_config:
+                    try:
+                        agent_config['rag_config'] = json.loads(rag_config)
+                    except json.JSONDecodeError:
+                        logger.warning("RAG配置JSON解析失败，使用默认配置")
 
         agent = BaseAgent(**agent_config)
 

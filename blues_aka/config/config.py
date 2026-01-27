@@ -97,10 +97,10 @@ class BaseConfig(BaseSettings):
     )
 
     embedding_batch_size: int = Field(
-        default=100,
+        default=64,
         ge=1,
-        le=1000,
-        description="Embedding 批处理大小"
+        le=64,
+        description="Embedding 批处理大小（API限制最大64条）"
     )
 
     # 文本分块配置

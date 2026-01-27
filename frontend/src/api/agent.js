@@ -25,16 +25,41 @@ api.interceptors.response.use(
   response => {
     return response.data
   },
-  error => {
+  async error => {
     console.error('API Error:', error)
 
-    // 如果收到401响应，清除认证状态
-    if (error.response && error.response.status === 401) {
-      localStorage.removeItem('isLoggedIn')
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      localStorage.removeItem('username')
-      window.location.href = '/login'
+    const originalRequest = error.config
+
+    // 如果收到401响应且未尝试过刷新token
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        // 尝试刷新token
+        const { authApi } = await import('./user.js')
+        const response = await authApi.refreshToken()
+
+        // 保存新的token
+        const newAccessToken = response.data.access_token
+        localStorage.setItem('access_token', newAccessToken)
+
+        // 更新请求头
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+
+        // 重试原始请求
+        return api(originalRequest)
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError)
+
+        // 刷新失败，清除认证状态并跳转登录
+        localStorage.removeItem('isLoggedIn')
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('username')
+        window.location.href = '/login'
+
+        return Promise.reject(refreshError)
+      }
     }
 
     // 提取后端返回的错误信息

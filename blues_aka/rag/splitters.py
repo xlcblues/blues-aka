@@ -5,12 +5,31 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter, CharacterTextSplitter, MarkdownTextSplitter, \
     TokenTextSplitter
 
-from blues_aka import ConfigFactory
-
 logger = logging.getLogger(__name__)
 
 SplitterType = Literal["recursive", "character", "markdown", "token"]
-_config = ConfigFactory.get_config()
+
+# 延迟导入配置，避免循环导入
+def _get_config():
+    """延迟获取配置，避免循环导入"""
+    from blues_aka import ConfigFactory
+    return ConfigFactory.get_config()
+
+_config = None
+
+def _get_default_chunk_size():
+    """获取默认的分块大小"""
+    global _config
+    if _config is None:
+        _config = _get_config()
+    return _config.chunk_size
+
+def _get_default_chunk_overlap():
+    """获取默认的分块重叠"""
+    global _config
+    if _config is None:
+        _config = _get_config()
+    return _config.chunk_overlap
 
 def get_text_splitter(
     splitter_type: SplitterType = "recursive",
@@ -19,8 +38,8 @@ def get_text_splitter(
     **kwargs,
 ):
     """获取文本分块器"""
-    chunk_size = chunk_size or _config.chunk_size
-    chunk_overlap = chunk_overlap or _config.chunk_overlap
+    chunk_size = chunk_size or _get_default_chunk_size()
+    chunk_overlap = chunk_overlap or _get_default_chunk_overlap()
 
     logger.debug(
         f"创建文本分块器: type={splitter_type}, "

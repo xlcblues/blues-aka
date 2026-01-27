@@ -134,6 +134,48 @@
       </div>
     </div>
 
+    <!-- 知识库选择器 -->
+    <div class="knowledge-base-selector" v-if="conversationId">
+      <div class="kb-selector-content">
+        <div class="kb-selector-left">
+          <el-icon class="kb-icon"><Reading /></el-icon>
+          <span class="kb-label">知识库:</span>
+          <el-select
+            v-model="selectedKnowledgeBase"
+            placeholder="未启用知识库"
+            clearable
+            @change="handleKnowledgeBaseChange"
+            class="kb-select"
+          >
+            <el-option
+              v-for="kb in knowledgeBases"
+              :key="kb.name"
+              :label="kb.name"
+              :value="kb.name"
+            >
+              <div class="kb-option">
+                <span class="kb-option-name">{{ kb.name }}</span>
+                <span class="kb-option-docs">{{ kb.num_documents || 0 }} 文档</span>
+              </div>
+            </el-option>
+          </el-select>
+          <el-tag v-if="selectedKnowledgeBase" type="success" size="small" class="kb-status">
+            <el-icon><Check /></el-icon>
+            已启用
+          </el-tag>
+        </div>
+        <div class="kb-selector-right">
+          <el-button
+            circle
+            size="small"
+            @click="showKnowledgeBaseManager"
+            :icon="Management"
+            title="管理知识库"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- 输入区域 -->
     <div class="chat-input-container">
       <div class="input-wrapper">
@@ -195,6 +237,13 @@
         <el-button type="primary" @click="createNewChat">创建</el-button>
       </template>
     </el-dialog>
+
+    <!-- 知识库管理组件 -->
+    <KnowledgeBaseManager
+      v-model:visible="kbManagerVisible"
+      :conversation-id="conversationId"
+      @knowledgeBaseSelected="handleKnowledgeBaseSelected"
+    />
   </div>
 </template>
 
@@ -202,9 +251,12 @@
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Reading, Management, Check } from '@element-plus/icons-vue'
 import { chatApi, conversationApi, agentApi } from '../api/agent'
+import { knowledgeBaseApi } from '../api/knowledgeBase'
 import { renderMarkdown } from '../utils/markdown'
 import { formatTime } from '../utils/time'
+import KnowledgeBaseManager from '../components/KnowledgeBaseManager.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -216,6 +268,11 @@ const conversation = ref(null)
 const conversationId = ref(null)
 const isStreaming = ref(false)
 const streamingContent = ref('')
+
+// 知识库相关状态
+const knowledgeBases = ref([])
+const selectedKnowledgeBase = ref(null)
+const kbManagerVisible = ref(false)
 
 // 输入相关
 const inputMessage = ref('')
@@ -626,6 +683,62 @@ watch(inputMessage, (newValue) => {
   inputRows.value = Math.min(Math.max(lines, 1), 5)
 })
 
+// 加载知识库列表
+const loadKnowledgeBases = async () => {
+  try {
+    const response = await knowledgeBaseApi.getKnowledgeBases()
+    if (response.code === 200) {
+      knowledgeBases.value = response.data || []
+    }
+  } catch (error) {
+    console.error('加载知识库列表失败:', error)
+  }
+}
+
+// 显示知识库管理器
+const showKnowledgeBaseManager = () => {
+  kbManagerVisible.value = true
+}
+
+// 知识库选择变化
+const handleKnowledgeBaseChange = async (value) => {
+  if (!conversationId.value) return
+
+  try {
+    if (value) {
+      // 启用 RAG 模式
+      await knowledgeBaseApi.toggleConversationRAG(conversationId.value, {
+        enable_rag: true,
+        rag_index_name: value,
+        rag_config: {
+          search_type: 'similarity',
+          k: 5
+        }
+      })
+      ElMessage.success(`已启用知识库: ${value}`)
+    } else {
+      // 禁用 RAG 模式
+      await knowledgeBaseApi.toggleConversationRAG(conversationId.value, {
+        enable_rag: false,
+        rag_index_name: null,
+        rag_config: {}
+      })
+      ElMessage.info('已禁用知识库')
+    }
+  } catch (error) {
+    console.error('切换知识库失败:', error)
+    ElMessage.error(error.backendMessage || '切换知识库失败')
+    // 恢复选择
+    selectedKnowledgeBase.value = value ? null : value
+  }
+}
+
+// 从知识库管理器选择知识库
+const handleKnowledgeBaseSelected = (kbName) => {
+  selectedKnowledgeBase.value = kbName
+  handleKnowledgeBaseChange(kbName)
+}
+
 // 初始化
 onMounted(async () => {
   conversationId.value = route.query.conversationId || null
@@ -633,9 +746,28 @@ onMounted(async () => {
   if (conversationId.value) {
     await fetchConversation()
     await fetchMessages()
+    // 加载当前对话的知识库配置
+    if (conversation.value?.enable_rag) {
+      selectedKnowledgeBase.value = conversation.value.rag_index_name
+    }
   } else if (route.query.agentId) {
     // 如果有智能体ID，显示智能体信息
     ElMessage.info('开始新对话')
+  }
+
+  // 加载知识库列表
+  await loadKnowledgeBases()
+})
+
+// 监听对话ID变化，重新加载知识库配置
+watch(conversationId, async (newId) => {
+  if (newId) {
+    await fetchConversation()
+    if (conversation.value?.enable_rag) {
+      selectedKnowledgeBase.value = conversation.value.rag_index_name
+    } else {
+      selectedKnowledgeBase.value = null
+    }
   }
 })
 </script>
@@ -913,5 +1045,69 @@ onMounted(async () => {
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
   border-color: #bae6fd !important;
   transform: none !important;
+}
+
+/* 知识库选择器样式 */
+.knowledge-base-selector {
+  background: white;
+  padding: 16px 24px;
+  border-top: 1px solid #ebeef5;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.kb-selector-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.kb-selector-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.kb-icon {
+  font-size: 20px;
+  color: #409eff;
+}
+
+.kb-label {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.kb-select {
+  flex: 1;
+  max-width: 400px;
+}
+
+.kb-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.kb-option-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.kb-option-docs {
+  font-size: 12px;
+  color: #909399;
+}
+
+.kb-status {
+  margin-left: 8px;
+}
+
+.kb-selector-right {
+  margin-left: 16px;
 }
 </style>

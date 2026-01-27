@@ -38,16 +38,17 @@ def create_vector_store(
             if not FAISS_AVAILABLE:
                 raise ImportError("FAISS 未安装。请运行: pip install faiss-cpu")
 
+            # FAISS.from_documents 期望的参数名是 embedding (单数)
             vector_store = FAISS.from_documents(
                 documents=documents,
-                embeddings=embeddings,
+                embedding=embeddings,
                 **kwargs
             )
             logger.info("FAISS 向量库创建成功")
         elif store_type == "inmemory":
             vector_store = InMemoryVectorStore.from_documents(
                 documents=documents,
-                embeddings=embeddings,
+                embedding=embeddings,
                 **kwargs
             )
             logger.info("inmemory 向量库创建成功")

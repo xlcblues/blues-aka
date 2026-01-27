@@ -20,20 +20,88 @@ api.interceptors.request.use(
   }
 )
 
+// 定义 authApi，需要在响应拦截器之前
+const authApi = {
+  // 用户登录
+  login(data) {
+    return api.post('/auth/login', data)
+  },
+
+  // 用户登出
+  logout() {
+    return api.post('/auth/logout')
+  },
+
+  // 用户注册
+  register(data) {
+    return api.post('/auth/register', data)
+  },
+
+  // 获取当前用户信息
+  getCurrentUser() {
+    return api.get('/auth/me')
+  },
+
+  // 刷新访问令牌
+  refreshToken() {
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (!refreshToken) {
+      return Promise.reject(new Error('No refresh token available'))
+    }
+
+    // 创建一个不使用拦截器的 axios 实例来避免循环
+    const refreshApi = axios.create({
+      baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
+      timeout: 10000
+    })
+
+    return refreshApi.post('/auth/refresh', {}, {
+      headers: {
+        'Authorization': `Bearer ${refreshToken}`
+      }
+    })
+  }
+}
+
 // 响应拦截器
 api.interceptors.response.use(
   response => {
     return response.data
   },
-  error => {
+  async error => {
     console.error('API Error:', error)
 
-    // 如果收到401响应，清除认证状态
-    if (error.response && error.response.status === 401) {
-      localStorage.removeItem('isLoggedIn')
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      localStorage.removeItem('username')
+    const originalRequest = error.config
+
+    // 如果收到401响应且未尝试过刷新token
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        // 尝试刷新token
+        const response = await authApi.refreshToken()
+
+        // 保存新的token
+        const newAccessToken = response.data.access_token
+        localStorage.setItem('access_token', newAccessToken)
+
+        // 更新请求头
+        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+
+        // 重试原始请求
+        return api(originalRequest)
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError)
+
+        // 刷新失败，清除认证状态并跳转登录
+        localStorage.removeItem('isLoggedIn')
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('username')
+        window.location.href = '/login'
+
+        return Promise.reject(refreshError)
+      }
     }
 
     // 提取后端返回的错误信息
@@ -75,24 +143,4 @@ export const userApi = {
   }
 }
 
-export const authApi = {
-  // 用户登录
-  login(data) {
-    return api.post('/auth/login', data)
-  },
-
-  // 用户登出
-  logout() {
-    return api.post('/auth/logout')
-  },
-
-  // 用户注册
-  register(data) {
-    return api.post('/auth/register', data)
-  },
-
-  // 获取当前用户信息
-  getCurrentUser() {
-    return api.get('/auth/me')
-  }
-}
+export { authApi }

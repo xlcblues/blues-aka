@@ -59,6 +59,7 @@ class ErrorCodes:
         USER_NOT_FOUND = "200101"  # 用户不存在
         USER_QUERY_FAILED = "200102"  # 查询用户失败
         USER_LIST_FAILED = "200103"  # 获取用户列表失败
+        REFRESH_TOKEN_FAILED = "200104"  # 刷新令牌失败
 
         # 用户创建异常 (2002xx)
         USER_CREATION_FAILED = "200201"  # 用户创建失败

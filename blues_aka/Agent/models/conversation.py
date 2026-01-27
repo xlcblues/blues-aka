@@ -63,6 +63,26 @@ class Conversation(db.Model):
                 'avatar': self.agent.avatar
             }
 
+            # 添加 RAG 配置信息（从 Agent 获取）
+            if hasattr(self.agent, 'enable_rag'):
+                data['enable_rag'] = self.agent.enable_rag
+            else:
+                data['enable_rag'] = False
+
+            if hasattr(self.agent, 'rag_index_name'):
+                data['rag_index_name'] = self.agent.rag_index_name
+            else:
+                data['rag_index_name'] = None
+
+            if hasattr(self.agent, 'rag_config'):
+                import json
+                try:
+                    data['rag_config'] = json.loads(self.agent.rag_config) if self.agent.rag_config else {}
+                except:
+                    data['rag_config'] = {}
+            else:
+                data['rag_config'] = {}
+
         return data
 
     def update_message_stats(self, token=0):

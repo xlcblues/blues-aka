@@ -65,7 +65,7 @@ class Message(db.Model):
     @classmethod
     def get_message_history(cls, conversation_id, limit=50):
         """获取聊天历史，用于传递给AI"""
-        message_history = Message.query.filter_by(conversation_id=conversation_id).order_by(cls.created_at.asc()).limit(limit).all()
+        message_history = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at.asc()).limit(limit).all()
         history = []
         for msg in message_history:
             if msg.role == 'user':

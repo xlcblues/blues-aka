@@ -165,3 +165,31 @@ def get_current_user():
         logger.error(f"获取当前用户信息失败: {str(e)}", exc_info=True)
         raise BusinessException(code=500, message="获取用户信息失败", error_code=ErrorCodes.User.USER_QUERY_FAILED)
 
+
+@auth_bp.route('/refresh', methods=['POST'])
+@handle_api_response
+@jwt_required(refresh=True)
+def refresh():
+    """
+    刷新访问令牌
+    """
+    try:
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+
+        if not user:
+            raise E.User.user_not_found()
+
+        # 创建新的 access token
+        access_token = create_access_token(identity=user.id)
+
+        return success(data={'access_token': access_token})
+
+    except BusinessException as e:
+        raise e
+
+    except Exception as e:
+        logger.error(f"刷新令牌失败: {str(e)}", exc_info=True)
+        raise BusinessException(code=500, message="刷新令牌失败", error_code=ErrorCodes.User.REFRESH_TOKEN_FAILED)
+
+
