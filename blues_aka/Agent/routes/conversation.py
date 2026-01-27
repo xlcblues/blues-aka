@@ -79,7 +79,7 @@ def get_conversations():
 
         query = Conversation.query.filter_by(user_id=user_id, status=status)
 
-        pagination = query.order_by(Conversation.last_message_at.desc().nullslast()).paginate(page, size, error_out=False)
+        pagination = query.order_by(Conversation.last_message_at.desc().nullslast()).paginate(page=page, per_page=size, error_out=False)
 
         items = [conversation.to_dict(include_agent = True) for conversation in pagination.items]
 
