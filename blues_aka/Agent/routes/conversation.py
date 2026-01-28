@@ -127,10 +127,27 @@ def update_conversation(conversation_id):
         if not conversation:
             raise BusinessException(code=404, message="对话不存在", error_code=404)
 
+        # 更新标题
         if data.get('title'):
             conversation.title = data.get('title')
+
+        # 更新描述
         if data.get('description'):
             conversation.description = data.get('description')
+
+        # 更新智能体
+        if 'agent_id' in data:
+            agent_id = data.get('agent_id')
+            if agent_id:
+                # 验证智能体是否存在且用户有权访问
+                agent = Agent.query.filter_by(id=agent_id).first()
+                if not agent or (agent.user_id != user_id and not agent.is_public):
+                    raise BusinessException(code=404, message="智能体不存在或无权访问", error_code=404)
+                conversation.agent_id = agent_id
+            else:
+                # 允许设置为空（使用默认模型）
+                conversation.agent_id = None
+
         db.session.commit()
 
         return success(data=conversation.to_dict(include_agent=True), message="更新成功")

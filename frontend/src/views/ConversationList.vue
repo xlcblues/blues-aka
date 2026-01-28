@@ -2,46 +2,39 @@
   <div class="page-container">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title">💬 对话管理</h1>
-      <div class="header-actions">
-        <el-button type="success" @click="showCreateDialog" class="create-btn">
+      <div class="header-left">
+        <h2 class="page-title">
+          <el-icon class="title-icon"><ChatLineRound /></el-icon>
+          对话管理
+        </h2>
+      </div>
+      <div class="header-right">
+        <el-radio-group v-model="statusFilter" @change="fetchConversations" class="status-selector" size="default">
+          <el-radio-button label="active">
+            <el-icon><Clock /></el-icon>
+            <span>进行中</span>
+          </el-radio-button>
+          <el-radio-button label="archived">
+            <el-icon><FolderOpened /></el-icon>
+            <span>已归档</span>
+          </el-radio-button>
+        </el-radio-group>
+        <el-button type="primary" size="default" @click="showCreateDialog" class="create-btn">
           <el-icon><Plus /></el-icon>
-          新建对话
+          <span>新建对话</span>
         </el-button>
       </div>
     </div>
 
-    <!-- 搜索和筛选区域 -->
-    <div class="search-section">
-      <div class="search-header">🎵 对话筛选</div>
-      <el-form :model="searchForm" inline>
-        <el-form-item label="状态">
-          <el-radio-group v-model="statusFilter" @change="fetchConversations">
-            <el-radio-button label="active">进行中</el-radio-button>
-            <el-radio-button label="archived">已归档</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-    </div>
-
     <!-- 对话列表表格 -->
     <div class="table-container">
-      <div class="table-header">
-        <span>🎸 对话列表</span>
-        <div class="table-actions">
-          <el-tooltip content="刷新数据 (F5)" placement="top">
-            <el-button circle @click="fetchConversations" :loading="loading" class="refresh-btn">
-              <el-icon><Refresh /></el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-      </div>
       <el-table
         v-loading="loading"
         :data="conversations"
         stripe
         style="width: 100%"
         class="conversation-table"
+        :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: '600' }"
         :empty-text="getEmptyText()"
       >
         <el-table-column prop="id" label="#" width="80" align="center">
@@ -110,30 +103,35 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="openConversation(row)" class="chat-btn">
-              <el-icon><ChatDotRound /></el-icon>
-              进入对话
-            </el-button>
-            <el-button type="info" size="small" @click="editConversation(row)" class="edit-btn">
-              <el-icon><Edit /></el-icon>
-              编辑
-            </el-button>
-            <el-button
-              type="warning"
-              size="small"
-              @click="archiveConversation(row)"
-              v-if="row.status === 'active'"
-              class="archive-btn"
-            >
-              <el-icon><FolderOpened /></el-icon>
-              归档
-            </el-button>
-            <el-button type="danger" size="small" @click="deleteConversation(row)" class="delete-btn">
-              <el-icon><Delete /></el-icon>
-              删除
-            </el-button>
+            <div class="action-buttons">
+              <el-button type="primary" size="small" @click="openConversation(row)" link>
+                <el-icon><ChatDotRound /></el-icon>
+                进入对话
+              </el-button>
+              <el-divider direction="vertical" />
+              <el-button type="primary" size="small" @click="editConversation(row)" link>
+                <el-icon><Edit /></el-icon>
+                编辑
+              </el-button>
+              <el-divider direction="vertical" />
+              <el-button
+                type="warning"
+                size="small"
+                @click="archiveConversation(row)"
+                link
+                v-if="row.status === 'active'"
+              >
+                <el-icon><FolderOpened /></el-icon>
+                归档
+              </el-button>
+              <el-divider direction="vertical" v-if="row.status === 'active'" />
+              <el-button type="danger" size="small" @click="deleteConversation(row)" link>
+                <el-icon><Delete /></el-icon>
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -177,6 +175,7 @@
             placeholder="请选择智能体（可选）"
             clearable
             filterable
+            popper-class="agent-select-dropdown"
             style="width: 100%"
           >
             <el-option
@@ -185,11 +184,11 @@
               :label="agent.name"
               :value="agent.id"
             >
-              <div style="display: flex; align-items: center; gap: 12px">
+              <div class="agent-option">
                 <el-avatar :size="40" :src="agent.avatar">{{ agent.name.charAt(0) }}</el-avatar>
-                <div style="flex: 1">
-                  <div style="font-weight: 600; font-size: 15px">{{ agent.name }}</div>
-                  <div style="font-size: 13px; color: #909399">{{ agent.description || '暂无描述' }}</div>
+                <div class="agent-option-info">
+                  <div class="agent-option-name">{{ agent.name }}</div>
+                  <div class="agent-option-desc">{{ agent.description || '暂无描述' }}</div>
                 </div>
               </div>
             </el-option>
@@ -346,9 +345,10 @@ const archiveConversation = async (conversation) => {
 }
 
 // 编辑对话
-const editConversation = (conversation) => {
+const editConversation = async (conversation) => {
   isEdit.value = true
   currentConversation.value = conversation
+  await fetchAgents()
   form.value = {
     title: conversation.title,
     agent_id: conversation.agent_id,
@@ -392,6 +392,7 @@ const handleSubmit = async () => {
     if (isEdit.value) {
       response = await conversationApi.updateConversation(currentConversation.value.id, {
         title: form.value.title,
+        agent_id: form.value.agent_id,
         description: form.value.description
       })
     } else {
@@ -447,171 +448,130 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 页面容器 */
 .page-container {
   padding: 24px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e8eef5 100%);
-  min-height: calc(100vh - 64px);
+  background: #f5f7fa;
+  min-height: 100vh;
 }
 
+/* 页面头部 */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding: 24px 32px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
-  position: relative;
+  margin-bottom: 20px;
+  padding: 20px 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
-.page-header::before {
-  content: '💬';
-  position: absolute;
-  top: 8px;
-  right: 15px;
-  font-size: 24px;
-  opacity: 0.3;
+.header-left {
+  display: flex;
+  align-items: center;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .page-title {
-  font-size: 32px;
-  font-weight: 700;
-  color: white;
   margin: 0;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.header-actions {
+  font-size: 24px;
+  font-weight: 600;
+  color: #303133;
   display: flex;
+  align-items: center;
   gap: 12px;
 }
 
+.title-icon {
+  font-size: 28px;
+  color: #409eff;
+}
+
+/* 状态选择器 */
+.status-selector {
+  display: flex;
+  align-items: center;
+}
+
+.status-selector :deep(.el-radio-button__inner) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s;
+}
+
+.status-selector :deep(.el-radio-button__inner:hover) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(64, 158, 255, 0.2);
+}
+
+.status-selector :deep(.el-icon) {
+  font-size: 16px;
+}
+
+/* 创建按钮 */
 .create-btn {
-  padding: 12px 32px;
-  font-size: 16px;
-  font-weight: 600;
-  background: white;
-  color: #667eea;
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-weight: 500;
+  padding: 12px 24px;
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+  transition: all 0.3s;
 }
 
-.search-section {
-  margin-bottom: 24px;
-  padding: 24px;
-  background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 30%, #90cdf4 60%, #63b3ed 100%);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(66, 153, 225, 0.15);
-  position: relative;
+.create-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.4);
 }
 
-.search-section::before {
-  content: '🎵';
-  position: absolute;
-  top: 8px;
-  right: 15px;
-  font-size: 16px;
-  opacity: 0.5;
-}
-
-.search-section::after {
-  content: '提示: 选择状态筛选对话';
-  position: absolute;
-  bottom: 8px;
-  right: 15px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.search-header {
-  font-size: 18px;
-  font-weight: 700;
-  color: #2c5282;
-  margin-bottom: 16px;
-}
-
-.search-section :deep(.el-form-item__label) {
-  font-weight: 600;
-  color: #2c5282;
-}
-
-.search-section :deep(.el-radio-button__inner) {
-  font-weight: 600;
-}
-
+/* 表格容器 */
 .table-container {
   background: white;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  position: relative;
-  margin-bottom: 24px;
-}
-
-.table-container::before {
-  content: '🎸';
-  position: absolute;
-  top: 10px;
-  right: 15px;
-  font-size: 20px;
-  opacity: 0.5;
-}
-
-.table-container::after {
-  content: '💬';
-  position: absolute;
-  top: 10px;
-  right: 45px;
-  font-size: 16px;
-  opacity: 0.5;
-}
-
-.table-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   margin-bottom: 20px;
-  font-size: 18px;
-  font-weight: 700;
-  color: #2d3748;
-}
-
-.table-actions {
-  display: flex;
-  gap: 8px;
 }
 
 .conversation-table {
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
 }
 
-.conversation-table :deep(.el-table__header) {
-  background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%);
+.conversation-table :deep(.el-table__header-wrapper) {
+  border-radius: 8px 8px 0 0;
 }
 
 .conversation-table :deep(.el-table__header th) {
-  background: transparent;
-  border-bottom: 2px solid #4299e1;
-  font-weight: 600;
-  color: #2d3748;
-  font-size: 15px;
+  border-bottom: 2px solid #e4e7ed;
+  font-size: 14px;
   padding: 16px 0;
+}
+
+.conversation-table :deep(.el-table__body td) {
+  padding: 14px 0;
 }
 
 .conversation-table :deep(.el-table__row:hover) {
-  background-color: #f7fafc;
+  background-color: #f5f7fa !important;
 }
 
-.conversation-table :deep(.el-table__row td) {
-  padding: 16px 0;
+.conversation-table :deep(.el-table__row) {
+  transition: background-color 0.25s ease;
 }
 
+/* 表格内容样式 */
 .conversation-id {
   color: #909399;
   font-weight: 600;
+  font-size: 13px;
 }
 
 .agent-cell {
@@ -624,7 +584,7 @@ onMounted(() => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   font-size: 18px;
   font-weight: 600;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
 }
 
 .agent-name {
@@ -640,7 +600,7 @@ onMounted(() => {
 
 .title-text {
   font-weight: 600;
-  font-size: 16px;
+  font-size: 15px;
   color: #303133;
 }
 
@@ -655,7 +615,7 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   color: #909399;
   font-weight: 500;
 }
@@ -677,71 +637,173 @@ onMounted(() => {
   font-style: italic;
 }
 
-.pagination-container {
+/* 操作按钮 */
+.action-buttons {
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 24px;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
+.action-buttons .el-button {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.action-buttons .el-button:hover {
+  transform: scale(1.05);
+}
+
+.action-buttons .el-divider--vertical {
+  height: 16px;
+  margin: 0 4px;
+}
+
+/* 分页 */
+.pagination-container {
+  margin-top: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: center;
+}
+
+.pagination-container :deep(.el-pagination) {
+  justify-content: center;
+}
+
+/* 表单对话框样式 */
 .form-tip {
-  margin-top: 8px;
+  margin-left: 12px;
   font-size: 13px;
   color: #909399;
 }
 
-.page-container:hover,
-.table-container:hover,
-.search-section:hover {
-  box-shadow: 0 12px 40px rgba(49, 130, 206, 0.25);
+/* 表单对话框优化 */
+:deep(.el-dialog__header) {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-/* 按钮样式 */
-.chat-btn {
-  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
-  border: none;
-  box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
+:deep(.el-dialog__body) {
+  padding: 24px;
 }
 
-.chat-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(66, 153, 225, 0.4);
+:deep(.el-dialog__footer) {
+  padding: 16px 24px 24px;
+  border-top: 1px solid #e4e7ed;
 }
 
-.edit-btn {
-  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-  border: none;
-  box-shadow: 0 4px 12px rgba(72, 187, 120, 0.3);
+:deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #606266;
 }
 
-.edit-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(72, 187, 120, 0.4);
+:deep(.el-textarea__inner) {
+  border-radius: 6px;
 }
 
-.archive-btn {
-  background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
-  border: none;
-  box-shadow: 0 4px 12px rgba(237, 137, 54, 0.3);
+:deep(.el-input__inner) {
+  border-radius: 6px;
 }
 
-.archive-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(237, 137, 54, 0.4);
+/* 标签优化 */
+:deep(.el-tag) {
+  border-radius: 6px;
+  font-weight: 500;
 }
 
-.delete-btn {
-  background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
-  border: none;
-  box-shadow: 0 4px 12px rgba(245, 101, 101, 0.3);
+/* 头像优化 */
+:deep(.el-avatar) {
+  border: 2px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.delete-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(245, 101, 101, 0.4);
+/* 下拉选择器中的头像样式修复 */
+:deep(.el-select-dropdown) {
+  border: none !important;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1) !important;
+}
+
+:deep(.el-select-dropdown__wrap) {
+  max-height: 274px !important;
+  overflow: auto !important;
+}
+
+:deep(.el-select-dropdown__list) {
+  padding: 4px 0 !important;
+}
+
+:deep(.el-select-dropdown__item) {
+  padding: 12px 16px !important;
+  height: auto !important;
+  min-height: 64px !important;
+  line-height: normal !important;
+  display: flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+}
+
+:deep(.el-select-dropdown__item.selected) {
+  background-color: #ecf5ff;
+}
+
+:deep(.el-select-dropdown__item .el-avatar) {
+  flex-shrink: 0 !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3) !important;
+}
+
+:deep(.el-select-dropdown__item:hover) {
+  background-color: #f5f7fa;
+}
+
+/* 智能体选项样式 */
+.agent-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  line-height: 1.5;
+}
+
+.agent-option :deep(.el-avatar) {
+  flex-shrink: 0;
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
+}
+
+.agent-option-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.agent-option-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #303133;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-option-desc {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.4;
+  max-height: 36px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
 }
 
 /* 响应式设计 */
@@ -757,20 +819,7 @@ onMounted(() => {
   }
 
   .page-title {
-    font-size: 24px;
-  }
-
-  .search-section {
-    padding: 20px;
-  }
-
-  .search-section :deep(.el-form--inline) .el-form-item {
-    display: block;
-    margin-bottom: 16px;
-  }
-
-  .search-header {
-    font-size: 16px;
+    font-size: 20px;
   }
 
   .table-container {
@@ -781,20 +830,65 @@ onMounted(() => {
   .conversation-table {
     min-width: 800px;
   }
+
+  .header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .status-selector {
+    flex: 1;
+  }
+
+  .status-selector :deep(.el-radio-button__inner) {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .create-btn {
+    padding: 10px 16px;
+  }
+}
+</style>
+
+<!-- 全局样式：修复智能体下拉框显示问题 -->
+<style>
+.agent-select-dropdown {
+  max-height: none !important;
 }
 
-/* 高对比度模式支持 */
-@media (prefers-contrast: high) {
-  .page-container {
-    border: 2px solid #2d3748;
-  }
+.agent-select-dropdown .el-select-dropdown__wrap {
+  max-height: 300px !important;
+  overflow-y: auto !important;
+}
 
-  .table-container {
-    border: 2px solid #2d3748;
-  }
+.agent-select-dropdown .el-select-dropdown__list {
+  padding: 6px 0 !important;
+}
 
-  .search-section {
-    border: 2px solid #2d3748;
-  }
+.agent-select-dropdown .el-select-dropdown__item {
+  height: auto !important;
+  min-height: 65px !important;
+  padding: 12px 16px !important;
+  line-height: normal !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.agent-select-dropdown .el-select-dropdown__item.is-selected {
+  background-color: #ecf5ff !important;
+}
+
+.agent-select-dropdown .el-select-dropdown__item:hover {
+  background-color: #f5f7fa !important;
+}
+
+.agent-select-dropdown .el-select-dropdown__item .el-avatar {
+  flex-shrink: 0 !important;
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
+  font-size: 18px !important;
+  border: none !important;
 }
 </style>
