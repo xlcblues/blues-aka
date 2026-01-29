@@ -168,7 +168,9 @@ export const useAuthStore = defineStore('auth', () => {
       // 如果获取失败，可能token已过期，清除认证状态
       if (error.response && error.response.status === 401) {
         clearAuth()
+        throw error // 重新抛出错误，让调用方知道token验证失败
       }
+      throw error // 其他错误也抛出
     }
   }
 

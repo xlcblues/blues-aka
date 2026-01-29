@@ -61,81 +61,72 @@
         >
           <!-- 用户消息 -->
           <div v-if="message.role === 'user'" class="user-message">
-            <div class="message-content">
-              <div class="message-text">{{ message.content }}</div>
-              <div class="message-time">{{ formatTime(message.created_at) }}</div>
-            </div>
-            <el-avatar :size="40">{{ username?.charAt(0) || 'U' }}</el-avatar>
+            <div class="user-message-content">{{ message.content }}</div>
           </div>
 
           <!-- AI消息 -->
           <div v-else class="assistant-message">
-            <el-avatar :size="40" :src="conversation?.agent?.avatar">
-              {{ conversation?.agent?.name?.charAt(0) || 'AI' }}
-            </el-avatar>
-            <div class="message-content">
-              <div class="message-text markdown-content" v-html="renderMarkdown(message.content)"></div>
-              <div class="message-meta">
-                <span class="message-time">{{ formatTime(message.created_at) }}</span>
-                <span v-if="message.tokens" class="message-tokens">
-                  <el-icon><Document /></el-icon>
-                  {{ message.tokens }} tokens
-                </span>
-              </div>
-              <div class="message-actions">
-                <el-button-group>
-                  <el-button size="small" @click="copyMessage(message.content)">
-                    <el-icon><CopyDocument /></el-icon>
-                    复制
-                  </el-button>
-                  <el-button size="small" @click="regenerateMessage(message)">
-                    <el-icon><RefreshRight /></el-icon>
-                    重新生成
-                  </el-button>
-                  <el-dropdown trigger="click" v-if="!message.rating">
-                    <el-button size="small">
-                      <el-icon><Star /></el-icon>
-                      评分
-                    </el-button>
-                    <template #dropdown>
-                      <el-dropdown-menu>
-                        <el-dropdown-item @click="rateMessage(message, 5)">⭐⭐⭐⭐⭐</el-dropdown-item>
-                        <el-dropdown-item @click="rateMessage(message, 4)">⭐⭐⭐⭐</el-dropdown-item>
-                        <el-dropdown-item @click="rateMessage(message, 3)">⭐⭐⭐</el-dropdown-item>
-                        <el-dropdown-item @click="rateMessage(message, 2)">⭐⭐</el-dropdown-item>
-                        <el-dropdown-item @click="rateMessage(message, 1)">⭐</el-dropdown-item>
-                      </el-dropdown-menu>
-                    </template>
-                  </el-dropdown>
-                  <el-button size="small" v-else disabled class="rated-btn">
-                    <el-icon><Star /></el-icon>
-                    已评分 {{ '⭐'.repeat(message.rating) }}
-                  </el-button>
-                </el-button-group>
-              </div>
+            <div class="assistant-message-text markdown-content" v-html="renderMarkdown(message.content)"></div>
+            <div class="message-actions">
+              <el-button text size="small" @click="copyMessage(message.content)">
+                <el-icon><CopyDocument /></el-icon>
+                复制
+              </el-button>
+              <el-button text size="small" @click="regenerateMessage(message)">
+                <el-icon><RefreshRight /></el-icon>
+                重新生成
+              </el-button>
+              <el-dropdown trigger="click" v-if="!message.rating">
+                <el-button text size="small">
+                  <el-icon><Star /></el-icon>
+                  评分
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="rateMessage(message, 5)">⭐⭐⭐⭐⭐</el-dropdown-item>
+                    <el-dropdown-item @click="rateMessage(message, 4)">⭐⭐⭐⭐</el-dropdown-item>
+                    <el-dropdown-item @click="rateMessage(message, 3)">⭐⭐⭐</el-dropdown-item>
+                    <el-dropdown-item @click="rateMessage(message, 2)">⭐⭐</el-dropdown-item>
+                    <el-dropdown-item @click="rateMessage(message, 1)">⭐</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button text size="small" v-else disabled class="rated-btn">
+                <el-icon><Star /></el-icon>
+                {{ message.rating }}⭐
+              </el-button>
             </div>
           </div>
         </div>
 
         <!-- 正在输入的AI消息 -->
-        <div v-if="isStreaming" class="message-item assistant">
-          <el-avatar :size="40" :src="conversation?.agent?.avatar">
-            {{ conversation?.agent?.name?.charAt(0) || 'AI' }}
-          </el-avatar>
-          <div class="message-content streaming">
-            <div class="message-text markdown-content">{{ streamingContent }}</div>
-            <div class="typing-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
+        <div v-if="isStreaming && streamingContent" class="message-item assistant streaming-message">
+          <div class="assistant-message-text markdown-content streaming-text" v-html="renderMarkdown(streamingContent)"></div>
+          <div class="message-actions streaming-actions">
+            <el-button text size="small" @click="copyStreamingContent" :disabled="!streamingContent">
+              <el-icon><CopyDocument /></el-icon>
+              复制
+            </el-button>
+            <el-button text size="small" @click="stopStreaming">
+              <el-icon><CircleClose /></el-icon>
+              停止生成
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 空白流式状态指示器 -->
+        <div v-if="isStreaming && !streamingContent" class="message-item assistant streaming-message">
+          <div class="typing-indicator">
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
         </div>
       </div>
     </div>
 
     <!-- 知识库选择器 -->
-    <div class="knowledge-base-selector" v-if="conversationId">
+    <div class="knowledge-base-selector" v-if="conversationId || route.query.agentId">
       <div class="kb-selector-content">
         <div class="kb-selector-left">
           <el-icon class="kb-icon"><Reading /></el-icon>
@@ -251,7 +242,7 @@
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Reading, Management, Check } from '@element-plus/icons-vue'
+import { Reading, Management, Check, Loading, CircleClose } from '@element-plus/icons-vue'
 import { chatApi, conversationApi, agentApi } from '../api/agent'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
 import { renderMarkdown } from '../utils/markdown'
@@ -268,6 +259,7 @@ const conversation = ref(null)
 const conversationId = ref(null)
 const isStreaming = ref(false)
 const streamingContent = ref('')
+const abortController = ref(null)
 
 // 知识库相关状态
 const knowledgeBases = ref([])
@@ -359,6 +351,18 @@ const sendMessageStream = async (content) => {
   try {
     isStreaming.value = true
     streamingContent.value = ''
+    abortController.value = new AbortController()
+
+    // 立即将用户消息添加到消息列表中显示
+    const userMessage = {
+      id: Date.now(), // 临时ID,后端会返回真实ID
+      role: 'user',
+      content: content,
+      created_at: new Date().toISOString()
+    }
+    messages.value.push(userMessage)
+    await nextTick()
+    scrollToBottom()
 
     const token = localStorage.getItem('access_token')
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
@@ -369,7 +373,8 @@ const sendMessageStream = async (content) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ content, stream: true })
+      body: JSON.stringify({ content, stream: true }),
+      signal: abortController.value.signal
     })
 
     if (!response.ok) {
@@ -398,16 +403,34 @@ const sendMessageStream = async (content) => {
               await nextTick()
               scrollToBottom()
             } else if (data.type === 'end') {
-              // 结束流式响应，添加到消息列表
+              // 先保存流式内容
+              const finalContent = streamingContent.value
+
+              // 添加到消息列表
               messages.value.push({
                 id: data.message_id,
                 role: 'assistant',
-                content: streamingContent.value,
+                content: finalContent,
                 created_at: new Date().toISOString()
               })
+
+              // 等待消息添加完成后，再清空流式状态
+              await nextTick()
+
+              // 使用平滑过渡，先隐藏流式消息
               streamingContent.value = ''
+
+              // 延迟重置流式状态，让DOM有时间渲染
+              setTimeout(() => {
+                isStreaming.value = false
+              }, 50)
+
+              // 滚动到底部
+              await nextTick()
+              scrollToBottom()
             } else if (data.type === 'error') {
               ElMessage.error(data.message || '发送消息失败')
+              streamingContent.value = ''
             }
           } catch (e) {
             // 忽略解析错误
@@ -416,16 +439,20 @@ const sendMessageStream = async (content) => {
       }
     }
 
-    // 刷新消息列表
-    await fetchMessages()
+    // 只刷新对话信息（标题、消息统计等），不需要重新获取消息列表
     await fetchConversation()
 
   } catch (error) {
-    console.error('发送消息失败:', error)
-    ElMessage.error('发送消息失败')
+    if (error.name === 'AbortError') {
+      ElMessage.info('已停止生成')
+    } else {
+      console.error('发送消息失败:', error)
+      ElMessage.error('发送消息失败')
+    }
     streamingContent.value = ''
   } finally {
     isStreaming.value = false
+    abortController.value = null
   }
 }
 
@@ -433,6 +460,17 @@ const sendMessageStream = async (content) => {
 const sendMessageNormal = async (content) => {
   try {
     isStreaming.value = true
+
+    // 立即将用户消息添加到消息列表中显示
+    const userMessage = {
+      id: Date.now(), // 临时ID,后端会返回真实ID
+      role: 'user',
+      content: content,
+      created_at: new Date().toISOString()
+    }
+    messages.value.push(userMessage)
+    await nextTick()
+    scrollToBottom()
 
     const response = await chatApi.chat(conversationId.value, {
       content,
@@ -470,7 +508,26 @@ const createConversationFirst = async (content) => {
     if (response.code === 200) {
       conversationId.value = response.data.id
       conversation.value = response.data
-      await sendMessage()
+
+      // 如果用户已经选择了知识库，自动应用到新对话
+      if (selectedKnowledgeBase.value) {
+        try {
+          await knowledgeBaseApi.toggleConversationRAG(conversationId.value, {
+            enable_rag: true,
+            rag_index_name: selectedKnowledgeBase.value,
+            rag_config: {
+              search_type: 'similarity',
+              k: 5
+            }
+          })
+          ElMessage.success(`已启用知识库: ${selectedKnowledgeBase.value}`)
+        } catch (error) {
+          console.error('启用知识库失败:', error)
+        }
+      }
+
+      // 使用流式发送消息(会在 sendMessageStream 内部添加用户消息)
+      await sendMessageStream(content)
     }
   } catch (error) {
     console.error('创建对话失败:', error)
@@ -485,6 +542,7 @@ const regenerateMessage = async (message) => {
   try {
     isStreaming.value = true
     streamingContent.value = ''
+    abortController.value = new AbortController()
 
     // 删除该消息后的所有消息
     const messageIndex = messages.value.findIndex(m => m.id === message.id)
@@ -501,7 +559,8 @@ const regenerateMessage = async (message) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ stream: true })
+      body: JSON.stringify({ stream: true }),
+      signal: abortController.value.signal
     })
 
     if (!response.ok) {
@@ -528,13 +587,31 @@ const regenerateMessage = async (message) => {
               await nextTick()
               scrollToBottom()
             } else if (data.type === 'end') {
+              // 先保存流式内容
+              const finalContent = streamingContent.value
+
+              // 添加到消息列表
               messages.value.push({
                 id: data.message_id,
                 role: 'assistant',
-                content: streamingContent.value,
+                content: finalContent,
                 created_at: new Date().toISOString()
               })
+
+              // 等待消息添加完成后，再清空流式状态
+              await nextTick()
+
+              // 使用平滑过渡，先隐藏流式消息
               streamingContent.value = ''
+
+              // 延迟重置流式状态，让DOM有时间渲染
+              setTimeout(() => {
+                isStreaming.value = false
+              }, 50)
+
+              // 滚动到底部
+              await nextTick()
+              scrollToBottom()
             }
           } catch (e) {
             // 忽略解析错误
@@ -543,13 +620,20 @@ const regenerateMessage = async (message) => {
       }
     }
 
-    await fetchMessages()
+    // 只刷新对话信息，不需要重新获取消息列表
+    await fetchConversation()
 
   } catch (error) {
-    console.error('重新生成失败:', error)
-    ElMessage.error('重新生成失败')
+    if (error.name === 'AbortError') {
+      ElMessage.info('已停止生成')
+    } else {
+      console.error('重新生成失败:', error)
+      ElMessage.error('重新生成失败')
+    }
+    streamingContent.value = ''
   } finally {
     isStreaming.value = false
+    abortController.value = null
   }
 }
 
@@ -560,6 +644,23 @@ const copyMessage = async (content) => {
     ElMessage.success('已复制到剪贴板')
   } catch (error) {
     ElMessage.error('复制失败')
+  }
+}
+
+// 复制流式内容
+const copyStreamingContent = async () => {
+  try {
+    await navigator.clipboard.writeText(streamingContent.value)
+    ElMessage.success('已复制到剪贴板')
+  } catch (error) {
+    ElMessage.error('复制失败')
+  }
+}
+
+// 停止流式输出
+const stopStreaming = () => {
+  if (abortController.value) {
+    abortController.value.abort()
   }
 }
 
@@ -702,7 +803,13 @@ const showKnowledgeBaseManager = () => {
 
 // 知识库选择变化
 const handleKnowledgeBaseChange = async (value) => {
-  if (!conversationId.value) return
+  // 如果还没有创建对话，暂存选择，等创建对话后再应用
+  if (!conversationId.value) {
+    if (value) {
+      ElMessage.info(`知识库 "${value}" 将在对话开始后启用`)
+    }
+    return
+  }
 
   try {
     if (value) {
@@ -777,53 +884,57 @@ watch(conversationId, async (newId) => {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 120px);
-  background: #f5f7fa;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   border-radius: 16px;
   overflow: hidden;
-  max-width: 1600px;
+  max-width: 1400px;
   margin: 0 auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
 }
 
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 32px;
+  padding: 20px 32px;
   background: white;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid #e5e7eb;
+  backdrop-filter: blur(10px);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
 }
 
 .conversation-info h3 {
-  margin: 0 0 10px 0;
-  font-size: 24px;
+  margin: 0 0 6px 0;
+  font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: #1e293b;
+  letter-spacing: -0.01em;
 }
 
 .conversation-info p {
   margin: 0;
-  font-size: 15px;
-  color: #909399;
+  font-size: 14px;
+  color: #64748b;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .header-right {
   display: flex;
-  gap: 16px;
+  gap: 12px;
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 32px;
+  padding: 24px;
+  background: transparent;
 }
 
 .loading-container,
@@ -835,21 +946,21 @@ watch(conversationId, async (newId) => {
 }
 
 .empty-icon {
-  font-size: 100px;
+  font-size: 80px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
 }
 
 .messages-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  max-width: 1200px;
+  gap: 16px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 8px;
 }
 
 .message-item {
-  display: flex;
-  gap: 12px;
+  display: block;
   width: 100%;
   animation: fadeInUp 0.3s ease;
 }
@@ -865,98 +976,120 @@ watch(conversationId, async (newId) => {
   }
 }
 
-.message-item.user {
-  flex-direction: row-reverse;
-  justify-content: flex-start;
-}
-
 .user-message {
   display: flex;
-  gap: 12px;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.user-message-content {
+  background: #f4f4f5;
+  color: #27272a;
+  border-radius: 20px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   max-width: 70%;
-  margin-left: auto;
-  align-items: flex-end;
-}
-
-.user-message .message-content {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-radius: 20px 20px 4px 20px;
-  padding: 16px 24px;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.25);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.user-message .message-text {
-  color: white;
+  display: inline-block;
   word-break: break-word;
-  white-space: pre-wrap;
+  white-space: normal;
   font-size: 15px;
-  line-height: 1.6;
-}
-
-.user-message .message-time {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  text-align: right;
+  line-height: 1.5;
+  font-weight: 400;
+  border: 1px solid #e4e4e7;
 }
 
 .assistant-message {
   display: flex;
-  gap: 12px;
-  max-width: 75%;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 16px;
 }
 
-.assistant-message .message-content {
-  background: white;
-  border-radius: 20px 20px 20px 4px;
-  padding: 16px 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  border: 1px solid #e8e8e8;
-}
-
-.assistant-message .message-text {
-  color: #303133;
+.assistant-message-text {
+  color: #27272a;
   word-break: break-word;
   white-space: pre-wrap;
-  line-height: 1.8;
-  font-size: 16px;
+  line-height: 1.4;
+  font-size: 15px;
+  font-weight: 400;
+  width: 100%;
 }
 
-.assistant-message .message-meta {
+/* 确保表格内的文本不换行 */
+.assistant-message-text :deep(table) {
+  white-space: normal;
+}
+
+.assistant-message-text :deep(td),
+.assistant-message-text :deep(th) {
+  white-space: normal;
+}
+
+.streaming-message {
   display: flex;
-  gap: 12px;
-  margin-top: 12px;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.streaming-text {
+  min-height: 24px;
+}
+
+.message-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.message-actions :deep(.el-button) {
+  color: #71717a;
   font-size: 12px;
-  color: #909399;
-  align-items: center;
+  padding: 4px 10px;
+  height: auto;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-weight: 400;
+  background: transparent;
+  border: 1px solid transparent;
 }
 
-.assistant-message .message-actions {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+.message-actions :deep(.el-button:hover) {
+  color: #52525b;
+  background: #f4f4f5;
+  border-color: #e4e4e7;
 }
 
-.streaming {
-  position: relative;
+.streaming-actions {
+  margin-top: 4px;
+}
+
+.streaming-actions :deep(.el-button) {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.rated-btn {
+  color: #f59e0b !important;
+  font-weight: 400;
 }
 
 .typing-indicator {
   display: flex;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 6px;
+  padding: 12px 0;
 }
 
 .typing-indicator span {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #409eff;
+  background: #a1a1aa;
   animation: typing 1.4s infinite ease-in-out;
+  box-shadow: 0 2px 4px rgba(161, 161, 170, 0.3);
 }
 
 .typing-indicator span:nth-child(2) {
@@ -970,50 +1103,147 @@ watch(conversationId, async (newId) => {
 @keyframes typing {
   0%, 60%, 100% {
     transform: translateY(0);
-    opacity: 0.7;
+    opacity: 0.4;
   }
   30% {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
     opacity: 1;
   }
 }
 
+/* Markdown 样式 */
 .markdown-content {
-  line-height: 1.8;
-}
-
-.markdown-content :deep(pre) {
-  background: #f5f7fa;
-  padding: 18px;
-  border-radius: 10px;
-  overflow-x: auto;
-  margin: 16px 0;
-  font-size: 15px;
-}
-
-.markdown-content :deep(code) {
-  background: #f5f7fa;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-family: 'Courier New', monospace;
-  font-size: 0.95em;
+  line-height: 1.4;
+  color: #27272a;
 }
 
 .markdown-content :deep(p) {
-  margin: 12px 0;
+  margin: 4px 0;
 }
 
 .markdown-content :deep(h1),
 .markdown-content :deep(h2),
 .markdown-content :deep(h3) {
-  margin: 20px 0 12px 0;
+  margin: 16px 0 8px 0;
   font-weight: 600;
+  color: #18181b;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
 }
 
+.markdown-content :deep(h1) {
+  font-size: 1.75em;
+}
+
+.markdown-content :deep(h2) {
+  font-size: 1.5em;
+}
+
+.markdown-content :deep(h3) {
+  font-size: 1.25em;
+}
+
+.markdown-content :deep(ul),
+.markdown-content :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-content :deep(li) {
+  margin: 4px 0;
+}
+
+.markdown-content :deep(code) {
+  background: #f4f4f5;
+  color: #71717a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  font-weight: 400;
+  border: 1px solid #e4e4e7;
+}
+
+.markdown-content :deep(pre) {
+  background: #f4f4f5;
+  color: #27272a;
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  border: 1px solid #e4e4e7;
+}
+
+.markdown-content :deep(pre code) {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-weight: 400;
+  border: none;
+}
+
+.markdown-content :deep(blockquote) {
+  border-left: 3px solid #d4d4d8;
+  padding-left: 12px;
+  margin: 12px 0;
+  color: #71717a;
+  font-style: italic;
+  background: #fafafa;
+  padding: 10px 12px;
+  border-radius: 0 6px 6px 0;
+}
+
+.markdown-content :deep(a) {
+  color: #52525b;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+  font-weight: 400;
+}
+
+.markdown-content :deep(a:hover) {
+  border-bottom-color: #52525b;
+  color: #27272a;
+}
+
+.markdown-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  white-space: normal;
+  display: table;
+}
+
+.markdown-content :deep(th),
+.markdown-content :deep(td) {
+  border: 1px solid #e4e4e7;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: normal;
+}
+
+.markdown-content :deep(th) {
+  background: #fafafa;
+  font-weight: 500;
+  color: #52525b;
+}
+
+.markdown-content :deep(tr:hover) {
+  background: #fafafa;
+}
+
+/* 输入区域 */
 .chat-input-container {
   background: white;
-  padding: 28px 32px;
-  border-top: 1px solid #ebeef5;
+  padding: 20px 24px;
+  border-top: 1px solid #e5e7eb;
+  backdrop-filter: blur(10px);
 }
 
 .input-wrapper {
@@ -1024,66 +1254,61 @@ watch(conversationId, async (newId) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .input-actions-left,
 .input-actions-right {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
-/* 已评分按钮样式 */
-.rated-btn {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
-  border-color: #bae6fd !important;
-  color: #0284c7 !important;
-  cursor: not-allowed;
-}
-
-.rated-btn:hover {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%) !important;
-  border-color: #bae6fd !important;
-  transform: none !important;
-}
-
-/* 知识库选择器样式 */
+/* 知识库选择器 */
 .knowledge-base-selector {
   background: white;
-  padding: 16px 24px;
-  border-top: 1px solid #ebeef5;
-  border-bottom: 1px solid #ebeef5;
+  padding: 14px 24px;
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .kb-selector-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 1200px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
 .kb-selector-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex: 1;
 }
 
 .kb-icon {
-  font-size: 20px;
-  color: #409eff;
+  font-size: 18px;
+  color: #7c3aed;
 }
 
 .kb-label {
-  font-size: 14px;
-  color: #606266;
+  font-size: 13px;
+  color: #64748b;
   font-weight: 500;
 }
 
 .kb-select {
   flex: 1;
-  max-width: 400px;
+  max-width: 350px;
+}
+
+.kb-select :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.kb-select :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #7c3aed inset;
 }
 
 .kb-option {
@@ -1095,12 +1320,13 @@ watch(conversationId, async (newId) => {
 
 .kb-option-name {
   font-weight: 500;
-  color: #303133;
+  color: #1e293b;
+  font-size: 14px;
 }
 
 .kb-option-docs {
   font-size: 12px;
-  color: #909399;
+  color: #94a3b8;
 }
 
 .kb-status {
@@ -1108,6 +1334,46 @@ watch(conversationId, async (newId) => {
 }
 
 .kb-selector-right {
-  margin-left: 16px;
+  margin-left: 12px;
+}
+
+/* 滚动条美化 */
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .messages-wrapper {
+    padding: 0 4px;
+  }
+
+  .user-message .message-content,
+  .assistant-message .message-content {
+    max-width: 90%;
+  }
+
+  .message-actions {
+    gap: 6px;
+  }
+
+  .message-actions :deep(.el-button) {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
 }
 </style>
