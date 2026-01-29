@@ -12,7 +12,7 @@
           <span class="title-icon">🐱‍👤</span>
           欢迎回来
         </h1>
-        <p class="login-subtitle">Blues AKA 用户管理系统</p>
+        <p class="login-subtitle">Blues AKA 智能助手平台</p>
       </div>
 
       <!-- 登录表单 -->

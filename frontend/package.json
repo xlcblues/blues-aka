@@ -1,7 +1,7 @@
 {
   "name": "blues-aka-frontend",
   "version": "1.0.0",
-  "description": "Blues AKA 用户管理系统前端",
+  "description": "Blues AKA 智能助手平台前端",
   "main": "index.js",
   "scripts": {
     "dev": "vite",
@@ -24,7 +24,8 @@
   "keywords": [
     "vue",
     "element-plus",
-    "user-management"
+    "ai-assistant",
+    "chatbot"
   ],
   "author": "",
   "license": "MIT"
