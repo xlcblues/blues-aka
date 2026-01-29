@@ -1,3 +1,29 @@
+"""
+聊天路由模块
+
+本模块提供聊天相关的 API 接口，包括：
+
+- 发送消息并获取 AI 回复（支持流式和非流式）
+- 获取对话消息历史
+- 消息反馈功能
+- 重新生成最后一条 AI 消息
+
+主要功能：
+    1. 支持流式和非流式两种响应模式
+    2. 自动保存用户消息和 AI 回复到数据库
+    3. 支持智能体配置（系统提示词、模型选择）
+    4. 支持 RAG（检索增强生成）功能
+    5. 自动更新对话统计信息
+    6. 消息反馈和重新生成功能
+
+异常处理：
+    - 使用统一的异常码体系
+    - 所有异常都通过 Exceptions 辅助类抛出
+    - 自动记录错误日志
+
+Author: Blues AKA Team
+"""
+
 import json
 import logging
 
@@ -11,6 +37,7 @@ from blues_aka.Agent.models.conversation import Conversation
 from blues_aka.Agent.models.message import Message
 from blues_aka.Agent.schemas import ChatSchema
 from blues_aka.common.exception import BusinessException
+from blues_aka.common.exceptions import Exceptions
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.extensions import db
@@ -22,7 +49,71 @@ chat_bp = Blueprint('chat', __name__, url_prefix='/chat')
 @jwt_required()
 @handle_api_response
 def chat(conversation_id):
-    """发送消息并获取回复"""
+    """
+    发送消息并获取 AI 回复
+
+    支持流式和非流式两种响应模式。流式模式下，响应以 Server-Sent Events (SSE)
+    格式实时返回生成的 token；非流式模式下，等待完整响应后一次性返回。
+
+    请求方法: POST
+    认证要求: 需要 JWT Token
+    路由参数:
+        conversation_id (int): 对话 ID
+
+    请求体 (JSON):
+        content (str): 用户消息内容，必填
+        stream (bool): 是否使用流式响应，可选，默认为 True
+
+    流式响应事件类型:
+        - start: 流式响应开始，包含 message_id
+        - token: 每次生成的文本片段
+        - end: 流式响应结束，包含 message_id 和 tokens 数量
+        - error: 发生错误时的错误信息
+
+    非流式响应 (JSON):
+        {
+            "code": 200,
+            "message": "成功",
+            "data": {
+                "message": {...},  # AI 消息对象
+                "conversation": {...}  # 对话对象
+            }
+        }
+
+    业务逻辑:
+        1. 验证用户身份和对话归属
+        2. 保存用户消息到数据库
+        3. 加载对话历史（最近 50 条）
+        4. 根据对话配置创建 Agent（支持智能体配置和 RAG）
+        5. 调用 AI 模型生成响应
+        6. 保存 AI 响应到数据库
+        7. 更新对话统计信息
+
+    智能体配置:
+        - model: AI 模型名称
+        - system_prompt: 系统提示词
+        - enable_rag: 是否启用 RAG
+        - rag_index_name: RAG 索引名称
+        - rag_config: RAG 配置（JSON 格式）
+
+    异常处理:
+        - 400101: 对话不存在
+        - 100001: 参数验证失败
+        - 500101: 消息发送失败
+        - 100301: 服务器内部错误
+
+    Args:
+        conversation_id (int): 对话 ID
+
+    Returns:
+        Response: 流式响应返回 SSE 流，非流式返回 JSON 对象
+
+    Raises:
+        Exceptions.Conversation.conversation_not_found: 对话不存在
+        Exceptions.Common.invalid_params: 参数验证失败
+        Exceptions.Chat.message_send_failed: 消息发送失败
+        Exceptions.Common.internal_server_error: 服务器内部错误
+    """
     try:
         user_id = get_jwt_identity()
         schema = ChatSchema()
@@ -37,7 +128,7 @@ def chat(conversation_id):
         conversation = Conversation.query.filter_by(id=conversation_id, user_id=user_id).first()
         if not conversation:
             logger.error(f"对话不存在 - conversation_id: {conversation_id}, user_id: {user_id}")
-            raise BusinessException(code=404, message="对话不存在", error_code=404)
+            raise Exceptions.Conversation.conversation_not_found()
 
         # 获取聊天历史（在保存当前用户消息之前）
         chat_history = Message.get_message_history(conversation_id, limit=50)
@@ -113,7 +204,7 @@ def chat(conversation_id):
                 return response
             except Exception as e:
                 logger.error(f"流式响应创建失败: {str(e)}", exc_info=True)
-                raise BusinessException(code=500, message=f"流式响应创建失败: {str(e)}")
+                raise Exceptions.Chat.message_send_failed(f"流式响应创建失败: {str(e)}")
         else:
             response_content = agent.invoke(input_text=content, chat_history=chat_history)
 
@@ -149,13 +240,59 @@ def chat(conversation_id):
             return success(data=result, message=ai_message.to_dict())
 
     except ValidationError as err:
-        raise BusinessException(code=400, message=str(err))
+        raise Exceptions.Common.invalid_params(str(err))
     except Exception as e:
         db.session.rollback()
-        raise BusinessException(code=500, message=str(e))
+        raise Exceptions.Common.internal_server_error(str(e))
 
 def generate_streaming_response(agent, content, chat_history, conversation_id, user_id):
-    """生成流式响应"""
+    """
+    生成流式响应
+
+    这是一个生成器函数，用于创建 SSE (Server-Sent Events) 格式的流式响应。
+    该函数会实时将 AI 生成的每个 token 推送给客户端，提供更好的用户体验。
+
+    工作流程：
+        1. 创建空的 AI 消息记录并保存到数据库，获取 message_id
+        2. 发送 'start' 事件，通知客户端流式响应开始
+        3. 调用 Agent 的 streaming 方法生成响应
+        4. 对每个生成的 token，发送 'token' 事件给客户端
+        5. 将完整的响应内容保存到数据库
+        6. 更新对话统计信息（消息数量、最后消息时间）
+        7. 发送 'end' 事件，包含最终的消息 ID 和 token 数量
+        8. 如果发生错误，发送 'error' 事件并回滚数据库事务
+
+    SSE 事件格式：
+        data: {"type": "start", "message_id": 123}
+
+        data: {"type": "token", "content": "你好"}
+
+        data: {"type": "end", "message_id": 123, "tokens": 150}
+
+        data: {"type": "error", "message": "错误信息"}
+
+    Args:
+        agent (BaseAgent): Agent 实例，用于生成 AI 响应
+        content (str): 用户输入的消息内容
+        chat_history (list): 聊天历史记录，包含之前的对话内容
+        conversation_id (int): 对话 ID，用于保存消息和更新统计
+        user_id (int): 用户 ID，用于关联消息归属
+
+    Yields:
+        str: SSE 格式的事件数据，每个事件都以 "data: {...}\\n\\n" 结尾
+
+    异常处理:
+        - 捕获流式生成过程中的所有异常
+        - 错误发生时，将 AI 消息内容更新为错误信息
+        - 通过 SSE 'error' 事件将错误信息发送给客户端
+        - 自动回滚数据库事务
+
+    注意事项:
+        - 使用 db.session.flush() 而不是 commit() 来获取 message_id
+        - 在流式生成过程中不提交事务，避免性能问题
+        - 错误处理中包含数据库回滚逻辑
+        - 所有数据库操作都有独立的异常处理
+    """
     ai_message = None
     message_id = None
     try:
@@ -252,32 +389,147 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
 @jwt_required()
 @handle_api_response
 def get_messages(conversation_id):
-    """获取对话消息历史"""
+    """
+    获取对话消息历史
+
+    查询指定对话的所有消息记录，按创建时间升序排列返回。
+
+    请求方法: GET
+    认证要求: 需要 JWT Token
+    路由参数:
+        conversation_id (int): 对话 ID
+
+    响应格式 (JSON):
+        {
+            "code": 200,
+            "message": "成功",
+            "data": [
+                {
+                    "id": 1,
+                    "conversation_id": 1,
+                    "content": "用户消息内容",
+                    "role": "user",
+                    "user_id": 1,
+                    "created_at": "2024-01-01T00:00:00",
+                    "model": null,
+                    "feedback": null
+                },
+                {
+                    "id": 2,
+                    "conversation_id": 1,
+                    "content": "AI 回复内容",
+                    "role": "assistant",
+                    "user_id": 1,
+                    "created_at": "2024-01-01T00:00:01",
+                    "model": "glm-4.5",
+                    "feedback": null
+                }
+            ]
+        }
+
+    业务逻辑:
+        1. 验证用户身份和对话归属
+        2. 查询对话的所有消息记录
+        3. 按创建时间升序排序（早到晚）
+        4. 返回消息列表
+
+    消息角色类型:
+        - user: 用户发送的消息
+        - assistant: AI 生成的回复
+
+    异常处理:
+        - 400101: 对话不存在
+        - 100301: 服务器内部错误
+
+    Args:
+        conversation_id (int): 对话 ID
+
+    Returns:
+        dict: 包含消息列表的响应对象
+            {
+                "code": 200,
+                "message": "成功",
+                "data": [list of message objects]
+            }
+
+    Raises:
+        Exceptions.Conversation.conversation_not_found: 对话不存在
+        Exceptions.Common.internal_server_error: 服务器内部错误
+    """
     try:
         # 获取对话
         user_id = get_jwt_identity()
         conversation = Conversation.query.filter_by(id=conversation_id, user_id=user_id).first()
         if not conversation:
-            raise BusinessException(code=404, message="对话不存在", error_code=404)
+            raise Exceptions.Conversation.conversation_not_found()
 
         messages = Message.query.filter_by(conversation_id=conversation.id).order_by(Message.created_at.asc()).all()
 
         items = [msg.to_dict() for msg in messages]
         return success(data=items)
     except Exception as e:
-        raise BusinessException(code=500, message=str(e))
+        raise Exceptions.Common.internal_server_error(str(e))
 
 @chat_bp.route('/messages/<int:message_id>/feedback', methods=['POST'])
 @jwt_required()
 @handle_api_response
 def message_feedback(message_id):
-    """消息反馈"""
+    """
+    提交消息反馈
+
+    允许用户对 AI 生成的消息进行评价和反馈，用于改进 AI 模型效果。
+    支持评分和文本反馈两种形式。
+
+    请求方法: POST
+    认证要求: 需要 JWT Token
+    路由参数:
+        message_id (int): 消息 ID
+
+    请求体 (JSON):
+        rating (int): 评分，可选，通常为 1-5 的整数
+        feedback_text (str): 反馈文本，可选，用户的具体意见或建议
+
+    响应格式 (JSON):
+        {
+            "code": 200,
+            "message": "反馈成功"
+        }
+
+    业务逻辑:
+        1. 验证用户身份和消息归属
+        2. 提取评分和反馈文本
+        3. 调用消息模型的 add_feedback 方法保存反馈
+        4. 返回成功响应
+
+    使用场景:
+        - 用户对 AI 回复质量进行评分
+        - 收集用户对 AI 回复的具体意见
+        - 用于后续的模型训练和改进
+
+    异常处理:
+        - 500201: 消息不存在
+        - 500501: 反馈提交失败
+
+    Args:
+        message_id (int): 消息 ID
+
+    Returns:
+        dict: 成功响应对象
+            {
+                "code": 200,
+                "message": "反馈成功"
+            }
+
+    Raises:
+        Exceptions.Chat.message_not_found: 消息不存在
+        Exceptions.Chat.feedback_failed: 反馈提交失败
+    """
     try:
         user_id = get_jwt_identity()
         data = request.get_json()
         message = Message.query.filter_by(id=message_id, user_id=user_id).first()
         if not message:
-            raise BusinessException(code=404, message="对话不存在", error_code=404)
+            raise Exceptions.Chat.message_not_found("对话不存在")
 
 
         message.add_feedback(rating=data.get('rating', 0), feedback_text=data.get('feedback_text'))
@@ -285,13 +537,82 @@ def message_feedback(message_id):
         return success(message="反馈成功")
 
     except Exception as e:
-        raise BusinessException(code=500, message="反馈失败")
+        raise Exceptions.Chat.feedback_failed()
 
 @chat_bp.route('/conversations/<int:conversation_id>/regenerate', methods=['POST'])
 @jwt_required()
 @handle_api_response
 def regenerate_message(conversation_id):
-    """重新生成最后一条消息"""
+    """
+    重新生成最后一条 AI 消息
+
+    删除对话中最后一条 AI 消息，并基于最后一条用户消息重新生成 AI 回复。
+    支持流式和非流式两种响应模式。
+
+    请求方法: POST
+    认证要求: 需要 JWT Token
+    路由参数:
+        conversation_id (int): 对话 ID
+
+    请求体 (JSON):
+        stream (bool): 是否使用流式响应，可选，默认为 True
+
+    流式响应事件类型:
+        - start: 流式响应开始，包含 message_id
+        - token: 每次生成的文本片段
+        - end: 流式响应结束，包含 message_id 和 tokens 数量
+        - error: 发生错误时的错误信息
+
+    非流式响应 (JSON):
+        {
+            "code": 200,
+            "message": "成功",
+            "data": {
+                "message": {...},  # 重新生成的 AI 消息对象
+                "conversation": {...}  # 对话对象
+            }
+        }
+
+    业务逻辑:
+        1. 验证用户身份和对话归属
+        2. 查找并删除最后一条 AI 消息
+        3. 如果没有 AI 消息可删除，抛出异常
+        4. 获取对话历史（最近 50 条）
+        5. 找到最后一条用户消息作为重新生成的输入
+        6. 根据对话配置创建 Agent（支持智能体配置和 RAG）
+        7. 调用 AI 模型重新生成响应
+        8. 保存新的 AI 响应到数据库
+        9. 更新对话统计信息
+
+    使用场景:
+        - 用户对 AI 回复不满意，希望重新生成
+        - AI 回复质量不佳，需要重新尝试
+        - 测试不同模型或配置下的回复效果
+
+    智能体配置:
+        - model: AI 模型名称
+        - system_prompt: 系统提示词
+        - enable_rag: 是否启用 RAG
+        - rag_index_name: RAG 索引名称
+        - rag_config: RAG 配置（JSON 格式）
+
+    异常处理:
+        - 400101: 对话不存在
+        - 500602: 没有可重新生成的消息
+        - 500601: 重新生成失败
+        - 100301: 服务器内部错误
+
+    Args:
+        conversation_id (int): 对话 ID
+
+    Returns:
+        Response: 流式响应返回 SSE 流，非流式返回 JSON 对象
+
+    Raises:
+        Exceptions.Conversation.conversation_not_found: 对话不存在
+        Exceptions.Chat.no_message_to_regenerate: 没有可重新生成的消息
+        Exceptions.Chat.regenerate_failed: 重新生成失败
+    """
     try:
         user_id = get_jwt_identity()
         data = request.get_json()
@@ -299,11 +620,11 @@ def regenerate_message(conversation_id):
         conversation = Conversation.query.filter_by(id=conversation_id, user_id=user_id).first()
 
         if not conversation:
-            raise BusinessException(code=404, message="对话不存在", error_code=404)
+            raise Exceptions.Conversation.conversation_not_found()
 
         last_ai_message = Message.query.filter_by(conversation_id=conversation.id, role='assistant').order_by(Message.created_at.desc()).first()
         if not last_ai_message:
-            raise BusinessException(code=400, message="没有可重新生成的消息", error_code=400)
+            raise Exceptions.Chat.no_message_to_regenerate()
 
         db.session.delete(last_ai_message)
         db.session.commit()
@@ -312,7 +633,7 @@ def regenerate_message(conversation_id):
 
         last_user_message = Message.query.filter_by(conversation_id=conversation.id, role='user').order_by(Message.created_at.desc()).first()
         if not last_user_message:
-            raise BusinessException(code=400, message="没有用户消息", error_code=400)
+            raise Exceptions.Chat.no_message_to_regenerate("没有用户消息")
 
         # 创建Agent并重新生成
         agent_config = {}
@@ -383,4 +704,4 @@ def regenerate_message(conversation_id):
 
     except Exception as e:
         db.session.rollback()
-        raise BusinessException(code=500, message="重新生成失败", error_code=500)
+        raise Exceptions.Chat.regenerate_failed()

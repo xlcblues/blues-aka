@@ -286,6 +286,46 @@ class Exceptions:
                 data=data or {}
             )
 
+        @staticmethod
+        def conversation_query_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """查询对话失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Conversation.CONVERSATION_QUERY_FAILED),
+                error_code=ErrorCodes.Conversation.CONVERSATION_QUERY_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def conversation_list_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """获取对话列表失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Conversation.CONVERSATION_LIST_FAILED),
+                error_code=ErrorCodes.Conversation.CONVERSATION_LIST_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def conversation_update_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """对话更新失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Conversation.CONVERSATION_UPDATE_FAILED),
+                error_code=ErrorCodes.Conversation.CONVERSATION_UPDATE_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def conversation_delete_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """对话删除失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Conversation.CONVERSATION_DELETE_FAILED),
+                error_code=ErrorCodes.Conversation.CONVERSATION_DELETE_FAILED,
+                data=data or {}
+            )
+
     class Chat:
         """聊天模块异常"""
 
@@ -336,6 +376,46 @@ class Exceptions:
                 code=400,
                 message=message or get_error_message(ErrorCodes.Chat.MESSAGE_CONTENT_EMPTY),
                 error_code=ErrorCodes.Chat.MESSAGE_CONTENT_EMPTY,
+                data=data or {}
+            )
+
+        @staticmethod
+        def feedback_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """反馈提交失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Chat.FEEDBACK_FAILED),
+                error_code=ErrorCodes.Chat.FEEDBACK_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def no_message_to_regenerate(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """没有可重新生成的消息"""
+            return BusinessException(
+                code=400,
+                message=message or get_error_message(ErrorCodes.Chat.NO_MESSAGE_TO_REGENERATE),
+                error_code=ErrorCodes.Chat.NO_MESSAGE_TO_REGENERATE,
+                data=data or {}
+            )
+
+        @staticmethod
+        def regenerate_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """重新生成失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Chat.REGENERATE_FAILED),
+                error_code=ErrorCodes.Chat.REGENERATE_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def stream_response_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """流式响应失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.Chat.STREAM_RESPONSE_FAILED),
+                error_code=ErrorCodes.Chat.STREAM_RESPONSE_FAILED,
                 data=data or {}
             )
 
@@ -432,6 +512,86 @@ class Exceptions:
                 code=413,
                 message=message or get_error_message(ErrorCodes.RAG.DOCUMENT_TOO_LARGE),
                 error_code=ErrorCodes.RAG.DOCUMENT_TOO_LARGE,
+                data=data or {}
+            )
+
+        @staticmethod
+        def knowledge_base_not_found(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """知识库不存在"""
+            return BusinessException(
+                code=404,
+                message=message or get_error_message(ErrorCodes.RAG.KNOWLEDGE_BASE_NOT_FOUND),
+                error_code=ErrorCodes.RAG.KNOWLEDGE_BASE_NOT_FOUND,
+                data=data or {}
+            )
+
+        @staticmethod
+        def knowledge_base_creation_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """知识库创建失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.KNOWLEDGE_BASE_CREATION_FAILED),
+                error_code=ErrorCodes.RAG.KNOWLEDGE_BASE_CREATION_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def knowledge_base_update_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """知识库更新失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.KNOWLEDGE_BASE_UPDATE_FAILED),
+                error_code=ErrorCodes.RAG.KNOWLEDGE_BASE_UPDATE_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def knowledge_base_delete_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """知识库删除失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.KNOWLEDGE_BASE_DELETE_FAILED),
+                error_code=ErrorCodes.RAG.KNOWLEDGE_BASE_DELETE_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def index_creation_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """索引创建失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.INDEX_CREATION_FAILED),
+                error_code=ErrorCodes.RAG.INDEX_CREATION_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def index_update_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """索引更新失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.INDEX_UPDATE_FAILED),
+                error_code=ErrorCodes.RAG.INDEX_UPDATE_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def index_delete_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """索引删除失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.INDEX_DELETE_FAILED),
+                error_code=ErrorCodes.RAG.INDEX_DELETE_FAILED,
+                data=data or {}
+            )
+
+        @staticmethod
+        def index_query_failed(message: str = None, data: Dict[str, Any] = None) -> BusinessException:
+            """索引查询失败"""
+            return BusinessException(
+                code=500,
+                message=message or get_error_message(ErrorCodes.RAG.INDEX_QUERY_FAILED),
+                error_code=ErrorCodes.RAG.INDEX_QUERY_FAILED,
                 data=data or {}
             )
 

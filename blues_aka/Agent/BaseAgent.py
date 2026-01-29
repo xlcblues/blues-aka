@@ -1,3 +1,51 @@
+"""
+BaseAgent 智能体基类模块
+
+本模块提供了智能体（Agent）的核心实现，基于 LangChain 和 LangGraph 框架构建。
+支持同步/异步调用、流式输出、工具调用和 RAG（检索增强生成）功能。
+
+主要功能：
+    1. 智能体管理
+       - 支持多种大语言模型（通过模型名称或实例）
+       - 自动工具管理和调用
+       - 可配置的系统提示词
+       - 调试模式支持
+
+    2. 调用模式
+       - 同步调用（invoke）
+       - 异步调用（ainvoke）
+       - 流式输出（streaming）
+       - 异步流式输出（astreaming）
+
+    3. RAG 支持
+       - 自动创建 RAG 检索工具
+       - 支持自定义检索配置
+       - 向量索引管理
+
+    4. 工具系统
+       - 内置基础工具集
+       - 支持自定义工具
+       - 自动工具描述生成
+
+使用示例：
+    # 创建基础智能体
+    agent = BaseAgent(model="glm-4.5")
+    response = agent.invoke("你好")
+
+    # 创建带 RAG 的智能体
+    agent = BaseAgent(
+        model="glm-4.5",
+        enable_rag=True,
+        rag_index_name="my_knowledge_base"
+    )
+
+    # 流式输出
+    for chunk in agent.streaming("请介绍自己"):
+        print(chunk, end="")
+
+Author: Blues AKA Team
+"""
+
 import logging
 from typing import Optional, Union, Sequence, Any, List, Iterator, Literal, AsyncIterator
 
@@ -21,6 +69,63 @@ logger = logging.getLogger(__name__)
 _config = ConfigFactory.get_config()
 
 class BaseAgent:
+    """
+    智能体基类
+
+    提供了一个功能完整的 AI 智能体实现，支持多种调用模式、工具使用和 RAG 功能。
+    基于 LangChain 框架构建，使用 LangGraph 实现状态图管理。
+
+    主要特性：
+        1. 多模型支持：支持通过模型名称或模型实例初始化
+        2. 工具系统：内置基础工具集，支持自定义工具
+        3. RAG 集成：可选的检索增强生成功能
+        4. 多种调用模式：同步、异步、流式输出
+        5. 灵活配置：支持自定义系统提示词和调试模式
+
+    初始化参数：
+        model: 模型配置（字符串、模型实例或 None 使用默认）
+        tools: 工具列表（None 使用基础工具集）
+        system_prompt: 系统提示词（None 自动生成）
+        prompt_mode: 提示词模式（default/creative/precise 等）
+        debug: 是否启用调试模式
+        enable_rag: 是否启用 RAG 功能
+        rag_index_name: RAG 知识库索引名称
+        rag_config: RAG 检索配置参数
+
+    使用示例：
+        # 基础使用
+        agent = BaseAgent(model="glm-4.5")
+        response = agent.invoke("你好，请介绍一下自己")
+
+        # 带工具的智能体
+        agent = BaseAgent(
+            model="glm-4.5",
+            tools=[custom_tool],
+            system_prompt="你是一个专业的助手"
+        )
+
+        # RAG 增强
+        agent = BaseAgent(
+            model="glm-4.5",
+            enable_rag=True,
+            rag_index_name="tech_docs"
+        )
+
+        # 流式输出
+        for chunk in agent.streaming("写一首诗"):
+            print(chunk, end="")
+
+    属性：
+        model: 语言模型实例
+        tools: 可用工具列表
+        system_prompt: 系统提示词
+        enable_rag: 是否启用 RAG
+        rag_index_name: RAG 索引名称
+        rag_config: RAG 配置
+        graph: LangGraph 状态图实例
+        debug: 调试模式标志
+    """
+
     def __init__(
             self,
             model: Optional[Union[str, BaseChatModel]] = None,
@@ -32,6 +137,76 @@ class BaseAgent:
             rag_index_name: Optional[str] = None,
             rag_config: Optional[dict] = None,
             **kwargs: Any):
+        """
+        初始化智能体实例
+
+        创建一个配置完整的智能体，支持模型选择、工具集成和 RAG 功能。
+
+        Args:
+            model: 模型配置，支持以下格式：
+                - None: 使用系统默认模型
+                - str: 模型名称（如 "glm-4.5"）或带提供商前缀（如 "zhipuai:glm-4.5"）
+                - BaseChatModel: 已初始化的模型实例
+            tools: 工具列表
+                - None: 使用内置基础工具集（BASIC_TOOLS）
+                - Sequence[BaseTool]: 自定义工具列表
+                - []: 空列表，不使用任何工具
+            system_prompt: 系统提示词
+                - None: 根据是否有工具自动生成
+                - str: 自定义系统提示词
+            prompt_mode: 提示词模式，影响自动生成的提示词风格
+                - "default": 默认模式
+                - "creative": 创意模式
+                - "precise": 精确模式
+                - 其他自定义模式
+            debug: 是否启用调试模式，启用后会输出详细的执行信息
+            enable_rag: 是否启用 RAG（检索增强生成）功能
+            rag_index_name: RAG 知识库索引名称
+                - 当 enable_rag=True 时必填
+                - 必须是已创建的知识库索引
+            rag_config: RAG 检索配置参数
+                - search_type: 检索类型（"similarity", "mmr"）
+                - k: 检索的文档数量
+                - score_threshold: 相似度阈值
+                - 其他检索参数
+            **kwargs: 传递给 create_agent 的额外参数
+
+        Raises:
+            Exception: 当模型初始化失败或 Agent 创建失败时抛出异常
+
+        初始化流程：
+            1. 模型初始化：根据 model 参数创建或使用模型实例
+            2. 工具配置：设置可用工具列表
+            3. RAG 配置：如果启用 RAG，创建并添加检索工具
+            4. 提示词配置：设置或生成系统提示词
+            5. Agent 创建：使用 LangGraph 创建状态图
+
+        示例：
+            # 使用默认模型和工具
+            agent = BaseAgent()
+
+            # 指定模型
+            agent = BaseAgent(model="glm-4.5")
+
+            # 自定义工具
+            agent = BaseAgent(tools=[my_tool])
+
+            # 启用 RAG
+            agent = BaseAgent(
+                enable_rag=True,
+                rag_index_name="my_kb",
+                rag_config={"k": 5, "score_threshold": 0.7}
+            )
+
+            # 完整配置
+            agent = BaseAgent(
+                model="glm-4.5",
+                tools=[search_tool],
+                system_prompt="你是一个专业的助手",
+                prompt_mode="precise",
+                debug=True
+            )
+        """
 
         # 初始化模型 - 将字符串转换为模型实例
         if model is None:
@@ -110,6 +285,58 @@ class BaseAgent:
         input_text: str,
         chat_history: Optional[List[BaseMessage]] = None,
         **kwargs: Any) -> str:
+        """
+        同步调用智能体
+
+        以同步方式调用智能体处理输入文本，返回完整的响应结果。
+        适用于不需要实时输出的场景。
+
+        Args:
+            input_text (str): 用户输入的文本内容
+            chat_history (Optional[List[BaseMessage]]): 聊天历史记录
+                - None: 不使用历史记录
+                - List[BaseMessage]: 包含 HumanMessage 和 AIMessage 的列表
+            **kwargs: 传递给 Agent 的额外参数
+
+        Returns:
+            str: 智能体的响应文本
+
+        Raises:
+            Exception: 当 Agent 执行失败时抛出异常
+
+        处理流程：
+            1. 构建消息列表：
+               - 如果提供 chat_history，将其添加到消息列表
+               - 将 input_text 包装为 HumanMessage 并添加到列表
+            2. 调用 Agent：将消息列表传递给 LangGraph
+            3. 提取响应：从返回的消息中提取最后一条 AI 消息
+            4. 返回结果：返回 AI 消息的内容
+
+        示例：
+            # 基础调用
+            agent = BaseAgent(model="glm-4.5")
+            response = agent.invoke("你好")
+            print(response)
+
+            # 带历史记录的调用
+            history = [
+                HumanMessage(content="我叫张三"),
+                AIMessage(content="你好张三，很高兴认识你")
+            ]
+            response = agent.invoke("我叫什么名字？", chat_history=history)
+
+            # 带额外参数
+            response = agent.invoke(
+                "帮我查询天气",
+                temperature=0.7,
+                max_tokens=1000
+            )
+
+        注意事项：
+            - 这是一个同步方法，会阻塞直到收到完整响应
+            - 对于长响应，建议使用 streaming() 方法获得更好的用户体验
+            - chat_history 中的消息顺序应为时间正序（从早到晚）
+        """
 
         try:
             messages = []
@@ -153,6 +380,101 @@ class BaseAgent:
             ] = "messages",
             **kwargs: Any
     ) -> Iterator[str]:
+        """
+        流式调用智能体
+
+        以流式方式调用智能体，实时生成并返回响应内容。
+        适用于需要实时显示或处理响应的场景。
+
+        Args:
+            input_text (str): 用户输入的文本内容
+            chat_history (Optional[List[BaseMessage]]): 聊天历史记录
+                - None: 不使用历史记录
+                - List[BaseMessage]: 包含 HumanMessage 和 AIMessage 的列表
+            stream_mode (Union[str, Sequence[str]]): 流式输出模式
+                - "messages": 按消息流式输出（默认，推荐）
+                - "updates": 按更新流式输出
+                - "values": 按值流式输出
+                - "checkpoints": 按检查点流式输出
+                - "debug": 调试信息流式输出
+                - 可以组合多个模式：["messages", "updates"]
+            **kwargs: 传递给 Agent 的额外参数
+
+        Yields:
+            Iterator[str]: 智能体响应的文本片段
+                - 每次yield返回一个或多个文本片段
+                - 片段按生成顺序返回
+                - 可以实时处理和显示
+
+        Raises:
+            Exception: 当 Agent 执行失败时抛出异常
+
+        处理流程：
+            1. 构建消息列表（与 invoke 相同）
+            2. 创建 Command 对象包装输入
+            3. 启动流式处理循环
+            4. 根据 stream_mode 解析不同类型的流式数据
+            5. 提取并 yield AI 消息内容
+
+        流式模式说明：
+            - "messages" 模式：
+                * 返回完整的消息对象
+                * 最常用，适合大多数场景
+                * 自动过滤非 AI 消息
+
+            - "updates" 模式：
+                * 返回状态更新信息
+                * 适合监控 Agent 执行过程
+                * 需要手动提取消息内容
+
+        示例：
+            # 基础流式输出
+            agent = BaseAgent(model="glm-4.5")
+            for chunk in agent.streaming("请介绍自己"):
+                print(chunk, end="")
+
+            # 带历史记录的流式输出
+            history = [
+                HumanMessage(content="我叫张三"),
+                AIMessage(content="你好张三")
+            ]
+            for chunk in agent.streaming("我叫什么？", chat_history=history):
+                print(chunk, end="")
+
+            # 实时流式传输（HTTP SSE）
+            from flask import Response, stream_with_context
+            response = Response(
+                stream_with_context(
+                    agent.streaming("写一首诗")
+                ),
+                mimetype='text/event-stream'
+            )
+
+            # 收集所有片段
+            full_response = ""
+            for chunk in agent.streaming("讲一个故事"):
+                full_response += chunk
+                print(chunk, end="", flush=True)
+
+        使用场景：
+            - 实时聊天界面
+            - HTTP Server-Sent Events (SSE)
+            - WebSocket 实时通信
+            - 长文本生成（避免等待）
+            - 进度显示和反馈
+
+        优势：
+            - 用户体验更好：实时看到响应，无需等待完整生成
+            - 降低延迟：首字符响应时间（TTFB）更短
+            - 节省内存：不需要在内存中缓存完整响应
+            - 可中断：用户可以提前终止流式输出
+
+        注意事项：
+            - 这是一个生成器函数，使用 for 循环或 list() 消费
+            - stream_mode="messages" 是最常用的模式
+            - 异常会在流式过程中抛出，需要适当处理
+            - 不同模型对流式输出的支持程度不同
+        """
         try:
             messages = []
 
@@ -197,6 +519,132 @@ class BaseAgent:
             config: Optional[dict[str, Any]] = None,
             **kwargs: Any
     ) -> str:
+        """
+        异步调用智能体
+
+        以异步方式调用智能体处理输入文本，返回完整的响应结果。
+        适用于需要高并发或非阻塞 I/O 的场景，是 invoke 方法的异步版本。
+
+        Args:
+            input_text (str): 用户输入的文本内容
+            chat_history (Optional[List[BaseMessage]]): 聊天历史记录
+                - None: 不使用历史记录
+                - List[BaseMessage]: 包含 HumanMessage 和 AIMessage 的列表
+                - 消息顺序应为时间正序（从早到晚）
+            config (Optional[dict[str, Any]]): LangGraph 运行配置
+                - None: 使用默认配置
+                - dict: 可包含以下配置项：
+                    * recursion_limit: 递归深度限制
+                    * timeout: 执行超时时间
+                    * tags: 执行标签
+                    * metadata: 元数据
+                    * 其他 LangGraph 配置参数
+            **kwargs: 传递给 Agent 的额外参数
+                - temperature: 温度参数（控制随机性）
+                - max_tokens: 最大生成 token 数
+                - top_p: nucleus sampling 参数
+                - 其他模型特定参数
+
+        Returns:
+            str: 智能体的响应文本
+                - 完整的 AI 消息内容
+                - 不包含历史记录
+                - 仅返回最后一条 AI 消息
+
+        Raises:
+            Exception: 当 Agent 执行失败时抛出异常
+                - 网络连接错误
+                - 模型 API 错误
+                - 超时错误
+                - 其他运行时异常
+
+        处理流程：
+            1. 构建消息列表：
+               - 如果提供 chat_history，将其添加到消息列表
+               - 将 input_text 包装为 HumanMessage 并添加到列表
+            2. 创建输入对象：
+               - 构建图输入字典
+               - 合并额外的 kwargs 参数
+               - 创建 Command 对象包装输入
+            3. 异步调用：使用 await 调用 LangGraph 的异步方法
+            4. 提取响应：从返回的消息中提取最后一条 AI 消息
+            5. 返回结果：返回 AI 消息的内容
+
+        与 invoke 的区别：
+            - 异步执行：使用 async/await 语法
+            - 非阻塞 I/O：不会阻塞事件循环
+            - 高并发支持：可同时处理多个请求
+            - 配置参数：支持 config 参数进行更细粒度的控制
+
+        示例：
+            # 基础异步调用
+            import asyncio
+
+            async def main():
+                agent = BaseAgent(model="glm-4.5")
+                response = await agent.ainvoke("你好")
+                print(response)
+
+            asyncio.run(main())
+
+            # 带历史记录的异步调用
+            async def chat_with_history():
+                agent = BaseAgent(model="glm-4.5")
+                history = [
+                    HumanMessage(content="我叫张三"),
+                    AIMessage(content="你好张三，很高兴认识你")
+                ]
+                response = await agent.ainvoke("我叫什么名字？", chat_history=history)
+                print(response)  # 应该回答"张三"
+
+            asyncio.run(chat_with_history())
+
+            # 带配置的异步调用
+            response = await agent.ainvoke(
+                "帮我写一段代码",
+                config={
+                    "recursion_limit": 50,
+                    "timeout": 30
+                },
+                temperature=0.3,
+                max_tokens=2000
+            )
+
+            # 并发处理多个请求
+            async def process_multiple_requests():
+                agent = BaseAgent(model="glm-4.5")
+                questions = [
+                    "什么是人工智能？",
+                    "什么是机器学习？",
+                    "什么是深度学习？"
+                ]
+                tasks = [agent.ainvoke(q) for q in questions]
+                answers = await asyncio.gather(*tasks)
+                for q, a in zip(questions, answers):
+                    print(f"Q: {q}\nA: {a}\n")
+
+            asyncio.run(process_multiple_requests())
+
+        使用场景：
+            - Web 应用：FastAPI、Flask 异步视图
+            - 高并发服务：需要同时处理多个请求
+            - 实时系统：聊天机器人、客服系统
+            - 微服务架构：异步调用链
+            - I/O 密集型应用：减少等待时间
+
+        性能优势：
+            - 更高的吞吐量：可以同时处理多个请求
+            - 更低的延迟：不阻塞其他任务
+            - 更好的资源利用：充分利用 I/O 等待时间
+            - 可扩展性：易于扩展到分布式系统
+
+        注意事项：
+            - 必须在异步上下文中调用（async 函数或事件循环）
+            - 使用 asyncio.run() 或 await 调用
+            - 异常处理需要使用 try-except 块
+            - config 参数的格式取决于 LangGraph 版本
+            - 不适合 CPU 密集型任务（应使用同步版本）
+        """
         try:
             messages = []
             if chat_history:
@@ -234,6 +682,164 @@ class BaseAgent:
             ] = "messages",
             **kwargs: Any
     ) -> AsyncIterator[str]:
+        """
+        异步流式调用智能体
+
+        以异步流式方式调用智能体，实时生成并返回响应内容。
+        结合了异步和流式的优势，适用于需要高并发实时输出的场景。
+
+        Args:
+            input_text (str): 用户输入的文本内容
+            chat_history (Optional[List[BaseMessage]]): 聊天历史记录
+                - None: 不使用历史记录
+                - List[BaseMessage]: 包含 HumanMessage 和 AIMessage 的列表
+                - 消息顺序应为时间正序（从早到晚）
+            stream_mode (Union[str, Sequence[str]]): 流式输出模式
+                - "messages": 按消息流式输出（默认，推荐）
+                - "updates": 按更新流式输出
+                - "values": 按值流式输出
+                - "checkpoints": 按检查点流式输出
+                - "debug": 调试信息流式输出
+                - 可以组合多个模式：["messages", "updates"]
+            **kwargs: 传递给 Agent 的额外参数
+                - temperature: 温度参数（控制随机性）
+                - max_tokens: 最大生成 token 数
+                - 其他模型特定参数
+
+        Yields:
+            AsyncIterator[str]: 智能体响应的文本片段
+                - 异步生成器，每次返回一个或多个文本片段
+                - 片段按生成顺序返回
+                - 可以实时处理和显示
+                - 使用 async for 循环消费
+
+        Raises:
+            Exception: 当 Agent 执行失败时抛出异常
+                - 网络连接错误
+                - 模型 API 错误
+                - 超时错误
+                - 其他运行时异常
+
+        处理流程：
+            1. 构建消息列表（与 ainvoke 相同）
+            2. 创建 Command 对象包装输入
+            3. 启动异步流式处理循环
+            4. 根据 stream_mode 解析不同类型的流式数据
+            5. 异步提取并 yield AI 消息内容
+
+        流式模式说明：
+            - "messages" 模式：
+                * 返回完整的消息对象
+                * 最常用，适合大多数场景
+                * 自动过滤非 AI 消息
+
+            - "updates" 模式：
+                * 返回状态更新信息
+                * 适合监控 Agent 执行过程
+                * 需要手动提取消息内容
+
+        与 streaming 的区别：
+            - 异步生成器：使用 async for 而非 for
+            - 非阻塞 I/O：不阻塞事件循环
+            - 高并发支持：可同时处理多个流式请求
+            - 更适合现代异步 Web 框架
+
+        示例：
+            # 基础异步流式输出
+            import asyncio
+
+            async def main():
+                agent = BaseAgent(model="glm-4.5")
+                async for chunk in agent.astreaming("请介绍自己"):
+                    print(chunk, end="")
+
+            asyncio.run(main())
+
+            # 带历史记录的异步流式输出
+            async def chat_with_history():
+                agent = BaseAgent(model="glm-4.5")
+                history = [
+                    HumanMessage(content="我叫张三"),
+                    AIMessage(content="你好张三")
+                ]
+                async for chunk in agent.astreaming("我叫什么？", chat_history=history):
+                    print(chunk, end="", flush=True)
+
+            asyncio.run(chat_with_history())
+
+            # 在 FastAPI 中使用异步流式输出
+            from fastapi import FastAPI
+            from fastapi.responses import StreamingResponse
+
+            app = FastAPI()
+            agent = BaseAgent(model="glm-4.5")
+
+            @app.post("/chat")
+            async def chat_endpoint(question: str):
+                async def generate():
+                    async for chunk in agent.astreaming(question):
+                        yield f"data: {chunk}\n\n"
+
+                return StreamingResponse(
+                    generate(),
+                    media_type="text/event-stream"
+                )
+
+            # 收集所有片段
+            async def collect_response():
+                full_response = ""
+                async for chunk in agent.astreaming("讲一个故事"):
+                    full_response += chunk
+                    print(chunk, end="", flush=True)
+                return full_response
+
+            # 并发处理多个流式请求
+            async def process_multiple_streams():
+                agent = BaseAgent(model="glm-4.5")
+                questions = [
+                    "写一首诗",
+                    "讲个笑话",
+                    "介绍一下Python"
+                ]
+
+                async def process_question(q):
+                    response = ""
+                    async for chunk in agent.astreaming(q):
+                        response += chunk
+                    return q, response
+
+                tasks = [process_question(q) for q in questions]
+                results = await asyncio.gather(*tasks)
+                for q, a in results:
+                    print(f"Q: {q}\nA: {a[:50]}...\n")
+
+            asyncio.run(process_multiple_streams())
+
+        使用场景：
+            - 异步 Web 应用：FastAPI、Starlette
+            - WebSocket 实时通信：异步 WebSocket 服务器
+            - 高并发聊天系统：同时服务多个用户
+            - 实时 API 服务：SSE（Server-Sent Events）
+            - 异步流数据处理：实时数据流分析
+
+        性能优势：
+            - 异步非阻塞：不阻塞其他协程
+            - 高并发能力：可同时处理数千个流式连接
+            - 低内存占用：不需要缓存完整响应
+            - 实时响应：首字符响应时间（TTFB）更短
+
+        与 streaming 的选择：
+            - 使用 streaming：同步应用、简单脚本
+            - 使用 astreaming：异步应用、高并发场景、现代 Web 框架
+
+        注意事项：
+            - 这是一个异步生成器函数，使用 async for 循环消费
+            - 必须在异步上下文中调用
+            - stream_mode="messages" 是最常用的模式
+            - 异常会在流式过程中抛出，需要适当处理
+            - 不同模型对流式输出的支持程度不同
+            - 客户端需要支持流式数据处理（如 SSE、WebSocket）
+        """
         try:
             messages = []
             if chat_history:
@@ -267,7 +873,149 @@ class BaseAgent:
             yield f"\n\n抱歉，处理您的请求时出现错误: {str(e)}"
 
     def _create_rag_tool(self, index_name: str, config: Optional[dict] = None):
-        """创建RAG检索工具"""
+        """
+        创建 RAG 检索工具（私有方法）
+
+        为智能体创建一个基于向量检索的 RAG（Retrieval-Augmented Generation）工具。
+        该工具允许智能体在生成响应时从知识库中检索相关信息，增强回答的准确性。
+
+        Args:
+            index_name (str): 知识库索引名称
+                - 必须是已经创建并索引的向量存储
+                - 索引通常通过 IndexManager 创建
+                - 同一个索引可以被多个 Agent 实例共享
+                - 索引名称区分大小写
+            config (Optional[dict]): RAG 检索配置参数
+                - None: 使用默认检索配置
+                - dict: 可包含以下配置项：
+                    * search_type: 检索类型
+                      - "similarity": 相似度检索（默认）
+                      - "mmr": 最大边际相关性检索（多样性）
+                    * k: 检索的文档数量（默认：4）
+                      - 太少可能导致信息不足
+                      - 太多可能引入噪声
+                      - 建议：3-10 之间
+                    * score_threshold: 相似度阈值（0-1）
+                      - 只返回相似度高于此值的文档
+                      - None 表示不设置阈值
+                    * fetch_k: 在 MMR 检索前获取的文档数
+                    * lambda_mult: MMR 多样性参数（0-1）
+                      - 0: 最大多样性
+                      - 1: 最大相关性
+                    * 其他检索器特定参数
+
+        Returns:
+            BaseTool | None: RAG 检索工具实例
+                - 成功：返回配置好的检索工具
+                - 失败：返回 None，并记录错误日志
+                - 工具名称固定为 "knowledge_base"
+                - 工具描述说明如何使用知识库
+
+        Raises:
+            本方法不抛出异常，而是返回 None 并记录错误
+
+        处理流程：
+            1. 初始化组件：
+               - 获取嵌入模型（get_embeddings）
+               - 创建索引管理器（IndexManager）
+
+            2. 验证索引：
+               - 检查索引是否存在
+               - 如果不存在，记录错误并返回 None
+
+            3. 加载向量存储：
+               - 从索引中加载向量存储
+               - 使用嵌入模型进行向量化
+
+            4. 创建检索器：
+               - 使用向量存储创建检索器
+               - 应用检索配置参数
+               - 支持多种检索策略
+
+            5. 创建工具：
+               - 将检索器包装为 LangChain 工具
+               - 设置工具名称和描述
+               - 返回可用的工具实例
+
+        检索策略说明：
+            - 相似度检索（similarity）：
+                * 根据向量相似度返回最相关的文档
+                * 适合精确匹配场景
+                * 可能返回重复内容
+
+            - MMR 检索：
+                * 在相关性和多样性之间平衡
+                * 避免返回过于相似的文档
+                * 适合需要广泛信息的场景
+
+        使用示例：
+            # 在 BaseAgent 初始化中使用（内部方法）
+            agent = BaseAgent(
+                model="glm-4.5",
+                enable_rag=True,
+                rag_index_name="tech_docs",
+                rag_config={
+                    "search_type": "similarity",
+                    "k": 5,
+                    "score_threshold": 0.7
+                }
+            )
+
+            # 直接调用（通常不推荐，仅供内部使用）
+            agent = BaseAgent(model="glm-4.5")
+            rag_tool = agent._create_rag_tool(
+                index_name="my_knowledge_base",
+                config={
+                    "search_type": "mmr",
+                    "k": 5,
+                    "lambda_mult": 0.5
+                }
+            )
+            if rag_tool:
+                agent.tools.append(rag_tool)
+
+        工具特性：
+            - 自动向量化：查询会自动转换为向量
+            - 语义搜索：基于语义相似度而非关键词
+            - 可配置：支持多种检索策略
+            - 集成友好：作为 LangChain 工具无缝集成
+
+        性能考虑：
+            - 索引大小：大型索引可能需要更多检索时间
+            - k 值选择：较大的 k 值会增加处理时间
+            - 检索模式：MMR 比 similarity 慢但质量更高
+            - 缓存：考虑缓存频繁查询的结果
+
+        最佳实践：
+            1. 索引管理：
+               - 定期更新索引以保持最新
+               - 使用有意义的索引名称
+               - 为不同主题创建独立索引
+
+            2. 配置优化：
+               - 根据文档特点调整 k 值
+               - 使用 score_threshold 过滤低质量结果
+               - 在相关性和多样性之间选择合适的检索模式
+
+            3. 错误处理：
+               - 检查返回值是否为 None
+               - 记录创建失败的日志
+               - 提供降级方案（如不使用 RAG）
+
+        注意事项：
+            - 这是一个私有方法（以 _ 开头），仅供内部使用
+            - 索引必须预先创建和索引
+            - 嵌入模型必须与索引创建时使用的模型一致
+            - 检索结果质量取决于索引质量和检索参数
+            - 如果索引不存在，方法会返回 None 而非抛出异常
+            - 工具名称固定为 "knowledge_base"，不可自定义
+
+        相关方法：
+            - __init__: 初始化时会调用此方法（当 enable_rag=True 时）
+            - IndexManager.index_exists: 检查索引是否存在
+            - create_retriever: 创建检索器实例
+            - create_retriever_tool: 将检索器包装为工具
+        """
         try:
             embeddings = get_embeddings()
             index_manager = IndexManager()
@@ -300,6 +1048,157 @@ def create_base_agent(
         debug: bool = False,
         **kwargs: Any
 ) -> BaseAgent:
+    """
+    创建智能体（工厂函数）
+
+    这是一个便捷的工厂函数，用于创建 BaseAgent 实例。
+    提供了与 BaseAgent 构造函数类似的接口，但更适合函数式编程风格。
+
+    Args:
+        model: 模型配置，支持以下格式：
+            - None: 使用系统默认模型
+            - str: 模型名称（如 "glm-4.5"）
+            - BaseChatModel: 已初始化的模型实例
+        tools: 工具列表
+            - None: 使用内置基础工具集（BASIC_TOOLS）
+            - Sequence[BaseTool]: 自定义工具列表
+            - []: 空列表，不使用任何工具
+        prompt_mode: 提示词模式，影响自动生成的提示词风格
+            - "default": 默认模式（平衡）
+            - "creative": 创意模式（更灵活）
+            - "precise": 精确模式（更严格）
+            - 其他自定义模式字符串
+        debug: 是否启用调试模式
+            - False: 正常模式（默认）
+            - True: 输出详细的执行信息
+        **kwargs: 传递给 BaseAgent 的额外参数
+            - enable_rag: 是否启用 RAG 功能
+            - rag_index_name: RAG 知识库索引名称
+            - rag_config: RAG 检索配置参数
+            - system_prompt: 自定义系统提示词
+            - 其他 BaseAgent 支持的参数
+
+    Returns:
+        BaseAgent: 配置好的智能体实例
+            - 已初始化并可立即使用
+            - 包含所有指定的工具和配置
+            - 可调用 invoke、streaming 等方法
+
+    Raises:
+        Exception: 当智能体创建失败时抛出异常
+            - 模型初始化错误
+            - 工具配置错误
+            - RAG 配置错误
+            - 其他初始化异常
+
+    创建流程：
+        1. 记录日志：记录智能体创建请求
+        2. 参数传递：将所有参数传递给 BaseAgent 构造函数
+        3. 实例化：创建并返回 BaseAgent 实例
+        4. 返回结果：返回完全配置的智能体对象
+
+    与直接使用 BaseAgent 的区别：
+        - 函数式风格：更适合函数式编程
+        - 日志记录：自动记录创建日志
+        - 简洁性：参数列表更简洁（不包含 RAG 相关参数）
+        - 灵活性：可以在未来添加额外的配置逻辑
+
+    使用示例：
+        # 基础使用
+        from blues_aka.Agent.BaseAgent import create_base_agent
+
+        agent = create_base_agent(model="glm-4.5")
+        response = agent.invoke("你好")
+
+        # 带自定义工具
+        from langchain_core.tools import tool
+
+        @tool
+        def my_tool(query: str) -> str:
+            return f"处理查询: {query}"
+
+        agent = create_base_agent(
+            model="glm-4.5",
+            tools=[my_tool],
+            debug=True
+        )
+
+        # 使用提示词模式
+        agent = create_base_agent(
+            model="glm-4.5",
+            prompt_mode="creative"
+        )
+
+        # 启用 RAG
+        agent = create_base_agent(
+            model="glm-4.5",
+            enable_rag=True,
+            rag_index_name="my_knowledge_base",
+            rag_config={"k": 5}
+        )
+
+        # 完整配置
+        agent = create_base_agent(
+            model="glm-4.5",
+            tools=[my_tool],
+            prompt_mode="precise",
+            debug=True,
+            enable_rag=True,
+            rag_index_name="tech_docs",
+            system_prompt="你是一个专业的技术顾问"
+        )
+
+    使用场景：
+        - 快速原型开发：快速创建智能体实例
+        - 函数式编程：集成到函数式代码中
+        - 配置管理：通过配置文件创建智能体
+        - 动态创建：根据条件动态创建不同配置的智能体
+        - 批量创建：创建多个相似的智能体实例
+
+    设计模式：
+        - 工厂模式：封装对象创建逻辑
+        - 简化接口：提供比直接构造更简洁的接口
+        - 关注点分离：将创建逻辑与使用逻辑分离
+
+    最佳实践：
+        1. 参数选择：
+           - 为生产环境明确指定 model
+           - 根据需求选择合适的 prompt_mode
+           - 在开发时启用 debug，生产时关闭
+
+        2. 工具管理：
+           - 只添加必要的工具
+           - 为工具提供清晰的名称和描述
+           - 测试工具与模型的兼容性
+
+        3. 错误处理：
+           - 捕获创建异常
+           - 提供降级方案
+           - 记录详细的错误信息
+
+        4. 性能优化：
+           - 重用智能体实例而非重复创建
+           - 考虑使用单例模式管理长期运行的智能体
+           - 合理配置工具数量
+
+    注意事项：
+        - 每次调用都会创建新的智能体实例
+        - 智能体实例不是线程安全的，避免多线程共享
+        - RAG 功能需要预先创建知识库索引
+        - 模型 API 密钥需要在配置中正确设置
+        - 不同的 prompt_mode 会影响智能体的行为
+
+    相关函数：
+        - BaseAgent.__init__: 底层构造函数
+        - get_chat_model: 获取模型实例
+        - get_prompt_with_tools: 生成带工具的提示词
+
+    扩展建议：
+        - 可以创建特定领域的工厂函数
+        - 可以添加配置验证逻辑
+        - 可以实现智能体池管理
+        - 可以添加智能体缓存机制
+    """
     logger.info("正在建立智能体")
     return BaseAgent(
         model=model,
