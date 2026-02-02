@@ -93,19 +93,19 @@ class Conversation(db.Model):
         self.message_count = Message.query.filter_by(conversation_id=self.id).count()
         self.token_count = (self.token_count or 0) + token
         self.last_message_at = func.now()
-        db.session.commit()
+        # 注意: 不在这里 commit,由调用者负责事务管理
 
     def archive(self):
         """归档对话"""
         self.status = 'archived'
-        db.session.commit()
+        # 注意: 不在这里 commit,由调用者负责事务管理
 
     def delete_soft(self):
         """软删除对话"""
         self.status = 'deleted'
         self.is_deleted = True
         self.deleted_at = func.now()
-        db.session.commit()
+        # 注意: 不在这里 commit,由调用者负责事务管理
 
     def restore(self):
         """
@@ -114,7 +114,7 @@ class Conversation(db.Model):
         self.status = 'active'
         self.is_deleted = False
         self.deleted_at = None
-        db.session.commit()
+        # 注意: 不在这里 commit,由调用者负责事务管理
 
     @property
     def is_deleted_property(self):

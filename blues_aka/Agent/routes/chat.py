@@ -362,14 +362,16 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
 
             logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
 
-            # 更新对话统计（不在这里 commit，避免在流式响应中操作数据库）
+            # 更新对话统计 - 使用延迟提交,避免在流式响应中操作数据库
+            # 注意: 这里不立即 commit,让 Flask 请求结束时自动提交
             try:
                 conversation = Conversation.query.get(conversation_id)
                 if conversation:
                     conversation.message_count = Message.query.filter_by(conversation_id=conversation_id).count()
                     conversation.last_message_at = func.now()
                     db.session.add(conversation)
-                    db.session.commit()
+                    # 不在这里 commit,避免在流式响应生成器中进行数据库事务
+                    # 统计信息会在请求结束时自动提交
             except Exception as db_error:
                 logger.error(f"更新对话统计失败: {str(db_error)}", exc_info=True)
                 db.session.rollback()

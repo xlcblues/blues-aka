@@ -30,7 +30,7 @@ class Permission(db.Model):
         """
         self.is_deleted = True
         self.deleted_at = func.now()
-        db.session.commit()
+        # 注意: 不在这里 commit,由调用者负责事务管理
 
     def restore(self):
         """
@@ -38,7 +38,7 @@ class Permission(db.Model):
         """
         self.is_deleted = False
         self.deleted_at = None
-        db.session.commit()
+        # 注意: 不在这里 commit,由调用者负责事务管理
 
     @property
     def is_deleted_property(self):
