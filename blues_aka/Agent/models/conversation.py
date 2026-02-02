@@ -32,6 +32,9 @@ class Conversation(db.Model):
     last_message_at = Column(DateTime, index=True)
     created_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime, nullable=True, index=True)  # 软删除时间戳
+
+    is_deleted = Column(Boolean, default=False, index=True)
 
     # 关系
     user = db.relationship('User', backref=db.backref('conversations', lazy='dynamic', cascade='all, delete-orphan'))
@@ -100,4 +103,22 @@ class Conversation(db.Model):
     def delete_soft(self):
         """软删除对话"""
         self.status = 'deleted'
+        self.is_deleted = True
+        self.deleted_at = func.now()
         db.session.commit()
+
+    def restore(self):
+        """
+        恢复已软删除的对话
+        """
+        self.status = 'active'
+        self.is_deleted = False
+        self.deleted_at = None
+        db.session.commit()
+
+    @property
+    def is_deleted_property(self):
+        """
+        检查对话是否已被软删除
+        """
+        return self.is_deleted or self.deleted_at is not None or self.status == 'deleted'

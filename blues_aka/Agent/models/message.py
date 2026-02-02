@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DECIMAL, JSON, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, DECIMAL, JSON, DateTime, ForeignKey, func, Boolean
 from blues_aka.extensions import db
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -32,6 +32,9 @@ class Message(db.Model):
     # 时间戳
     created_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime, nullable=True, index=True)  # 软删除时间戳
+
+    is_deleted = Column(Boolean, default=False, index=True)
 
     # 关系
     user = db.relationship('User', backref=db.backref('messages', lazy='dynamic', cascade='all, delete-orphan'))
@@ -62,10 +65,37 @@ class Message(db.Model):
         self.feedback_text = feedback_text
         db.session.commit()
 
+    def soft_delete(self):
+        """
+        软删除消息
+        将消息标记为已删除,并记录删除时间
+        """
+        self.is_deleted = True
+        self.deleted_at = func.now()
+        db.session.commit()
+
+    def restore(self):
+        """
+        恢复已软删除的消息
+        """
+        self.is_deleted = False
+        self.deleted_at = None
+        db.session.commit()
+
+    @property
+    def is_deleted_property(self):
+        """
+        检查消息是否已被软删除
+        """
+        return self.is_deleted or self.deleted_at is not None
+
     @classmethod
     def get_message_history(cls, conversation_id, limit=50):
         """获取聊天历史，用于传递给AI"""
-        message_history = Message.query.filter_by(conversation_id=conversation_id).order_by(Message.created_at.asc()).limit(limit).all()
+        message_history = Message.query.filter_by(
+            conversation_id=conversation_id,
+            is_deleted=False
+        ).order_by(Message.created_at.asc()).limit(limit).all()
         history = []
         for msg in message_history:
             if msg.role == 'user':

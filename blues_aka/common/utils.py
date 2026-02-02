@@ -69,7 +69,7 @@ def require_admin(f):
 
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
-        if user is None:
+        if user is None or user.is_deleted:
             raise BusinessException(
                 code=404,
                 message="用户不存在",

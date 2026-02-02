@@ -41,6 +41,9 @@ class Agent(db.Model):
     # 时间戳
     created_at = Column(DateTime, default=func.now(), nullable=False, index=True)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime, nullable=True, index=True)  # 软删除时间戳
+
+    is_deleted = Column(Boolean, default=False, index=True)
 
     # rag配置
     enable_rag = Column(Boolean, default=False)
@@ -83,3 +86,27 @@ class Agent(db.Model):
         """增加使用次数"""
         self.usage_count = (self.usage_count or 0) + 1
         db.session.commit()
+
+    def soft_delete(self):
+        """
+        软删除智能体
+        将智能体标记为已删除,并记录删除时间
+        """
+        self.is_deleted = True
+        self.deleted_at = func.now()
+        db.session.commit()
+
+    def restore(self):
+        """
+        恢复已软删除的智能体
+        """
+        self.is_deleted = False
+        self.deleted_at = None
+        db.session.commit()
+
+    @property
+    def is_deleted_property(self):
+        """
+        检查智能体是否已被软删除
+        """
+        return self.is_deleted or self.deleted_at is not None

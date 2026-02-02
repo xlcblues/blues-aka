@@ -191,7 +191,7 @@ def create_user():
 def update_user(id):
     try:
         user = User.query.get(id)
-        if not user:
+        if not user or user.is_deleted:
             raise E.User.user_not_found()
 
         json_data = request.get_json()
@@ -337,7 +337,7 @@ def change_password(id):
             raise E.User.unauthorized()
 
         user = User.query.get(id)
-        if not user:
+        if not user or user.is_deleted:
             logger.warning(f"用户 {id} 不存在")
             raise E.User.user_not_found()
 

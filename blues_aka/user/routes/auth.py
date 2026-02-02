@@ -33,7 +33,7 @@ def login():
         user = User.query.filter_by(username=username).first()
         logger.info("校验中")
 
-        if not user:
+        if not user or user.is_deleted:
             raise E.User.user_not_found()
         if not user.check_password(password):
             raise E.User.invalid_credentials()
@@ -139,7 +139,7 @@ def get_current_user():
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
 
-        if not user:
+        if not user or user.is_deleted:
             raise E.User.user_not_found()
 
         # 返回用户基本信息，包含is_admin字段
@@ -177,7 +177,7 @@ def refresh():
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
 
-        if not user:
+        if not user or user.is_deleted:
             raise E.User.user_not_found()
 
         # 创建新的 access token

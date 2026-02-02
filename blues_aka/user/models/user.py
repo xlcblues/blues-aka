@@ -43,6 +43,8 @@ class User(db.Model):
     updated_at = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)  # 软删除时间戳
 
+    is_deleted = db.Column(db.Boolean, default=False, index=True)
+
     def __repr__(self):
         return f'<User {self.username}>'
 
