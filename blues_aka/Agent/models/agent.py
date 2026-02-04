@@ -7,7 +7,7 @@ class Agent(db.Model):
 
     # 基础字段
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = Column(Integer, db.ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
 
     # 基本信息
     name = Column(String(100), nullable=False)
@@ -50,6 +50,9 @@ class Agent(db.Model):
     rag_index_name = Column(String(100))
     rag_config = Column(Text)  # JSON: {"search_type": "similarity", "k": 4}
 
+    enable_web_search = Column(Boolean, default=False)  # Agent 级别的默认值
+    web_search_config = Column(Text)
+
     # 关系
     user = db.relationship('User', backref=db.backref('agents', lazy='dynamic', cascade='all, delete-orphan'))
     conversations = db.relationship('Conversation', back_populates='agent', cascade='all, delete-orphan')
@@ -79,7 +82,9 @@ class Agent(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'enable_rag': self.enable_rag,
             'rag_index_name': self.rag_index_name,
-            'rag_config': self.rag_config
+            'rag_config': self.rag_config,
+            'enable_web_search': self.enable_web_search,
+            'web_search_config': self.web_search_config
         }
 
     def increment_usage(self):

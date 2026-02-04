@@ -20,3 +20,4 @@ class CreateConversationSchema(Schema):
 class ChatSchema(Schema):
     content = fields.Str(required=True, validate=validate.Length(min=1, max=10000))
     stream = fields.Bool(missing=False)
+    enable_web_search = fields.Bool(missing=None)

@@ -1,7 +1,7 @@
 import logging
 from sqlite3 import IntegrityError
 
-from flask import Blueprint, request, app
+from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity, current_user
 from marshmallow import ValidationError
 

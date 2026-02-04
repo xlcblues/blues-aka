@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, func
 
 from blues_aka.Agent.models.message import Message
@@ -9,7 +7,7 @@ class Conversation(db.Model):
     __tablename__ = 'conversations'
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = Column(Integer, db.ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
     agent_id = Column(Integer, db.ForeignKey('agents.id', ondelete='SET NULL'))
 
     # 对话信息

@@ -20,6 +20,8 @@ class CreateAgentSchema(Schema):
     enable_rag = fields.Bool(missing=False)
     rag_index_name = fields.Str(allow_none=True)
     rag_config = fields.Str(allow_none=True)  # JSON字符串
+    enable_web_search = fields.Bool(missing=False)
+    web_search_config = fields.Str(allow_none=True)  # JSON字符串
 
 class UpdateAgentSchema(Schema):
     class Meta:
@@ -42,3 +44,5 @@ class UpdateAgentSchema(Schema):
     enable_rag = fields.Bool()
     rag_index_name = fields.Str(allow_none=True)
     rag_config = fields.Str(allow_none=True)  # JSON字符串
+    enable_web_search = fields.Bool(missing=False)
+    web_search_config = fields.Str(allow_none=True)  # JSON字符串

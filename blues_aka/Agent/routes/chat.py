@@ -40,6 +40,7 @@ from blues_aka.common.exception import BusinessException
 from blues_aka.common.exceptions import Exceptions
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
+from blues_aka.core.tools import BASIC_TOOLS
 from blues_aka.extensions import db
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ def chat(conversation_id):
         data = schema.load(request.json)
         stream = data.get('stream', True)
         content = data.get('content')
-
+        enable_web_search = data.get('enable_web_search')
         logger.info(f"收到聊天请求 - conversation_id: {conversation_id}, user_id: {user_id}, stream: {stream}")
         logger.info(f"消息内容: {content[:100]}..." if len(content) > 100 else f"消息内容: {content}")
 
@@ -145,6 +146,8 @@ def chat(conversation_id):
 
         # 获取智能体配置
         agent_config = {}
+        tools_to_use = BASIC_TOOLS.copy()
+
         if conversation.agent:
             logger.info(f"使用智能体 - id: {conversation.agent.id}, name: {conversation.agent.name}, model: {conversation.agent.model}")
             # tools 从数据库读取的是 JSON，如果是 None 或空列表，不传递给 BaseAgent
@@ -162,9 +165,27 @@ def chat(conversation_id):
                 # 不传递 tools，让 BaseAgent 使用默认工具
                 # 注意：temperature 和 max_tokens 应该在模型层面配置，不传给 BaseAgent
             }
+
+            if enable_web_search is None:
+                enable_web_search = getattr(conversation, 'enable_web_search', False)
+
+            if enable_web_search:
+                from blues_aka.core.tools import OPTIONAL_TOOLS
+                if 'web_search' in OPTIONAL_TOOLS:
+                    tools_to_use.append(OPTIONAL_TOOLS['web_search'])
+                    logger.info("已启用联网搜索工具")
+
         elif conversation.model:
             logger.info(f"使用对话模型 - model: {conversation.model}")
             agent_config = {'model': conversation.model}
+
+            if enable_web_search:
+                from blues_aka.core.tools import OPTIONAL_TOOLS
+                if 'web_search' in OPTIONAL_TOOLS:
+                    tools_to_use.append(OPTIONAL_TOOLS['web_search'])
+                    logger.info("已启用联网搜索工具")
+
+        agent_config['tools'] = tools_to_use
 
         # RAG配置 - 从 agent 获取 RAG 配置
         if conversation.agent and hasattr(conversation.agent, 'enable_rag') and conversation.agent.enable_rag:

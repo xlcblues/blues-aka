@@ -212,6 +212,25 @@
           <el-switch v-model="form.is_public" />
           <span class="form-tip">公开后其他用户也可以使用此智能体</span>
         </el-form-item>
+
+        <el-divider content-position="left">
+          <el-icon><Setting /></el-icon>
+          高级配置
+        </el-divider>
+
+        <el-form-item label="启用联网搜索" prop="enable_web_search">
+          <el-switch v-model="form.enable_web_search" />
+          <span class="form-tip">允许智能体使用联网搜索获取最新信息</span>
+        </el-form-item>
+
+        <el-form-item label="RAG配置" prop="enable_rag">
+          <el-switch v-model="form.enable_rag" />
+          <span class="form-tip">启用检索增强生成（RAG）功能</span>
+        </el-form-item>
+
+        <el-form-item v-if="form.enable_rag" label="RAG索引名称" prop="rag_index_name">
+          <el-input v-model="form.rag_index_name" placeholder="请输入RAG知识库索引名称" />
+        </el-form-item>
       </el-form>
 
       <template #footer>
@@ -304,7 +323,11 @@ const form = ref({
   temperature: 0.7,
   max_tokens: 2000,
   top_p: 1.0,
-  is_public: false
+  is_public: false,
+  // 新增字段
+  enable_web_search: false,
+  enable_rag: false,
+  rag_index_name: ''
 })
 
 const formRef = ref(null)

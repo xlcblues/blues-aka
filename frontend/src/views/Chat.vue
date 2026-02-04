@@ -125,44 +125,69 @@
       </div>
     </div>
 
-    <!-- 知识库选择器 -->
-    <div class="knowledge-base-selector" v-if="conversationId || route.query.agentId">
-      <div class="kb-selector-content">
-        <div class="kb-selector-left">
-          <el-icon class="kb-icon"><Reading /></el-icon>
-          <span class="kb-label">知识库:</span>
-          <el-select
-            v-model="selectedKnowledgeBase"
-            placeholder="未启用知识库"
-            clearable
-            @change="handleKnowledgeBaseChange"
-            class="kb-select"
-          >
-            <el-option
-              v-for="kb in knowledgeBases"
-              :key="kb.name"
-              :label="kb.name"
-              :value="kb.name"
+    <!-- 知识库和工具栏 -->
+    <div class="tools-bar" v-if="conversationId || route.query.agentId">
+      <div class="tools-bar-content">
+        <!-- 知识库选择器 -->
+        <div class="tool-section kb-section">
+          <div class="tool-section-left">
+            <el-icon class="tool-icon kb-icon"><Reading /></el-icon>
+            <span class="tool-label">知识库:</span>
+            <el-select
+              v-model="selectedKnowledgeBase"
+              placeholder="未启用知识库"
+              clearable
+              @change="handleKnowledgeBaseChange"
+              class="tool-select kb-select"
             >
-              <div class="kb-option">
-                <span class="kb-option-name">{{ kb.name }}</span>
-                <span class="kb-option-docs">{{ kb.num_documents || 0 }} 文档</span>
-              </div>
-            </el-option>
-          </el-select>
-          <el-tag v-if="selectedKnowledgeBase" type="success" size="small" class="kb-status">
-            <el-icon><Check /></el-icon>
-            已启用
-          </el-tag>
+              <el-option
+                v-for="kb in knowledgeBases"
+                :key="kb.name"
+                :label="kb.name"
+                :value="kb.name"
+              >
+                <div class="kb-option">
+                  <span class="kb-option-name">{{ kb.name }}</span>
+                  <span class="kb-option-docs">{{ kb.num_documents || 0 }} 文档</span>
+                </div>
+              </el-option>
+            </el-select>
+            <el-tag v-if="selectedKnowledgeBase" type="success" size="small" class="kb-status">
+              <el-icon><Check /></el-icon>
+              已启用
+            </el-tag>
+          </div>
+          <div class="tool-section-right">
+            <el-button
+              circle
+              size="small"
+              @click="showKnowledgeBaseManager"
+              :icon="Management"
+              title="管理知识库"
+            />
+          </div>
         </div>
-        <div class="kb-selector-right">
-          <el-button
-            circle
-            size="small"
-            @click="showKnowledgeBaseManager"
-            :icon="Management"
-            title="管理知识库"
+
+        <!-- 分隔线 -->
+        <el-divider direction="vertical" class="tool-divider" />
+
+        <!-- 联网搜索开关 -->
+        <div class="tool-section search-section">
+          <el-icon class="tool-icon search-icon"><Search /></el-icon>
+          <span class="tool-label">联网搜索</span>
+          <el-switch
+            v-model="enableWebSearch"
+            active-text="开"
+            inactive-text="关"
+            size="default"
           />
+          <el-tooltip
+            v-if="conversation?.agent?.enable_web_search"
+            content="该智能体默认启用联网搜索"
+            placement="top"
+          >
+            <el-icon class="info-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
         </div>
       </div>
     </div>
@@ -242,7 +267,7 @@
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Reading, Management, Check, Loading, CircleClose } from '@element-plus/icons-vue'
+import { Reading, Management, Check, Loading, CircleClose, Search, InfoFilled } from '@element-plus/icons-vue'
 import { chatApi, conversationApi, agentApi } from '../api/agent'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
 import { renderMarkdown } from '../utils/markdown'
@@ -265,6 +290,9 @@ const abortController = ref(null)
 const knowledgeBases = ref([])
 const selectedKnowledgeBase = ref(null)
 const kbManagerVisible = ref(false)
+
+// 联网搜索相关状态
+const enableWebSearch = ref(false)
 
 // 输入相关
 const inputMessage = ref('')
@@ -296,6 +324,11 @@ const fetchConversation = async () => {
     const response = await conversationApi.getConversation(conversationId.value)
     if (response.code === 200) {
       conversation.value = response.data
+
+      // 如果智能体默认启用联网搜索，则设置开关状态
+      if (conversation.value.agent?.enable_web_search) {
+        enableWebSearch.value = true
+      }
     }
   } catch (error) {
     console.error('获取对话详情失败:', error)
@@ -373,7 +406,11 @@ const sendMessageStream = async (content) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ content, stream: true }),
+      body: JSON.stringify({
+        content,
+        stream: true,
+        enable_web_search: enableWebSearch.value
+      }),
       signal: abortController.value.signal
     })
 
@@ -474,7 +511,8 @@ const sendMessageNormal = async (content) => {
 
     const response = await chatApi.chat(conversationId.value, {
       content,
-      stream: false
+      stream: false,
+      enable_web_search: enableWebSearch.value
     })
 
     if (response.code === 200) {
@@ -1263,47 +1301,94 @@ watch(conversationId, async (newId) => {
   gap: 8px;
 }
 
-/* 知识库选择器 */
-.knowledge-base-selector {
+/* 工具栏 */
+.tools-bar {
   background: white;
-  padding: 14px 24px;
   border-top: 1px solid #e5e7eb;
   border-bottom: 1px solid #e5e7eb;
 }
 
-.kb-selector-content {
+.tools-bar-content {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  max-width: 900px;
-  margin: 0 auto;
+  padding: 12px 24px;
+  gap: 16px;
 }
 
-.kb-selector-left {
+/* 工具区块 */
+.tool-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+}
+
+.tool-section-left {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 1;
 }
 
-.kb-icon {
+.tool-section-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-icon {
   font-size: 18px;
+  flex-shrink: 0;
+}
+
+.kb-icon {
   color: #7c3aed;
 }
 
-.kb-label {
-  font-size: 13px;
-  color: #64748b;
-  font-weight: 500;
+.search-icon {
+  color: #3b82f6;
 }
 
-.kb-select {
+.tool-label {
+  font-size: 14px;
+  color: #475569;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.tool-select {
   flex: 1;
-  max-width: 350px;
+  max-width: 300px;
+}
+
+/* 垂直分隔线 */
+.tool-divider {
+  height: 32px;
+  margin: 0;
+  border-color: #e5e7eb;
+}
+
+/* 信息提示图标 */
+.info-icon {
+  font-size: 16px;
+  color: #94a3b8;
+  cursor: help;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.info-icon:hover {
+  color: #3b82f6;
+}
+
+/* 知识库选择器样式 */
+.kb-section {
+  flex: 2;
+  max-width: 60%;
 }
 
 .kb-select :deep(.el-input__wrapper) {
-  border-radius: 8px;
+  border-radius: 6px;
   transition: all 0.2s;
 }
 
@@ -1327,6 +1412,38 @@ watch(conversationId, async (newId) => {
 .kb-option-docs {
   font-size: 12px;
   color: #94a3b8;
+}
+
+.kb-status {
+  flex-shrink: 0;
+}
+
+/* 联网搜索区块 */
+.search-section {
+  flex: 1;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.kb-selector-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.kb-selector-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.kb-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
 }
 
 .kb-status {

@@ -1,4 +1,3 @@
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DECIMAL, JSON, DateTime, ForeignKey, func, Boolean
 from blues_aka.extensions import db
 from langchain_core.messages import HumanMessage, AIMessage
@@ -8,7 +7,7 @@ class Message(db.Model):
 
     id = Column(Integer, primary_key=True)
     conversation_id = Column(Integer, db.ForeignKey('conversations.id', ondelete='CASCADE'), nullable=False, index=True)
-    user_id = Column(Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = Column(Integer, db.ForeignKey('users.id', ondelete='RESTRICT'), nullable=False, index=True)
 
     # 消息内容
     role = Column(String(20), nullable=False, index=True)  # user, assistant, system

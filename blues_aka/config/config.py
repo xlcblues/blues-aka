@@ -156,6 +156,19 @@ class BaseConfig(BaseSettings):
         description="MMR 检索的候选文档数量"
     )
 
+    # tavily配置
+    tavily_api_key: str = Field(
+        default="TAVILY_API_KEY",
+        description="Tavily 搜索 API 密钥（可选）"
+    )
+
+    tavily_max_results: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Tavily 搜索返回的最大结果数"
+    )
+
     class Config:
         env_file = ".env"
         case_sensitive = True
