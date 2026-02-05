@@ -1,3 +1,24 @@
+"""RAG Agent 模块
+
+该模块提供了基于检索增强生成（RAG）的智能问答代理功能。
+通过将向量检索器与语言模型结合，实现对知识库的智能问答。
+
+主要功能:
+    - create_rag_agent: 创建标准的 RAG Agent
+    - create_conversational_rag_agent: 创建支持对话历史的 RAG Agent
+    - query_rag_agent: 同步查询 RAG Agent
+    - aquery_rag_agent: 异步查询 RAG Agent
+    - format_rag_response: 格式化 RAG 响应结果
+
+Example:
+    >>> from blues_aka.rag.rag_agent import create_rag_agent, query_rag_agent
+    >>> from blues_aka.rag.retrievers import create_retriever
+    >>>
+    >>> retriever = create_retriever(vector_store)
+    >>> agent = create_rag_agent(retriever)
+    >>> result = query_rag_agent(agent, "什么是机器学习？")
+    >>> print(result["answer"])
+"""
 import logging
 from typing import Optional, List, Any, Dict
 
@@ -9,6 +30,7 @@ from blues_aka.rag.retrievers import create_retriever_tool
 
 logger = logging.getLogger(__name__)
 
+# 默认的 RAG 系统提示词
 DEFAULT_RAG_SYSTEM_PROMPT = """你是一个智能问答助手，专门回答基于知识库的问题。
 
 你的任务：
@@ -40,7 +62,40 @@ def create_rag_agent(
     streaming: bool = True,
     **kwargs,
 ):
-    """创建 RAG Agent"""
+    """创建 RAG Agent
+
+    创建一个基于检索增强生成的智能问答代理，可以使用知识库回答用户问题。
+
+    Args:
+        retriever (BaseRetriever): 向量检索器实例，用于从知识库中检索相关文档
+        model (Optional[str]): 使用的语言模型名称，如果为 None 则使用配置文件中的默认模型
+            默认值: None
+        system_prompt (Optional[str]): 系统提示词，用于定义 Agent 的行为和回答风格
+            如果为 None 则使用 DEFAULT_RAG_SYSTEM_PROMPT
+            默认值: None
+        tool_name (str): 检索工具的名称
+            默认值: "knowledge_base"
+        tool_description (Optional[str]): 检索工具的描述，帮助 Agent 理解何时使用该工具
+            如果为 None 则使用默认描述
+            默认值: None
+        streaming (bool): 是否启用流式输出
+            默认值: True
+        **kwargs: 传递给 create_agent 的其他参数
+
+    Returns:
+        创建的 Agent 实例，可用于执行查询
+
+    Note:
+        - Agent 会自动创建一个检索工具，用于从知识库中获取信息
+        - 默认系统提示词要求 Agent 基于文档内容回答，不要编造信息
+        - Agent 会引用来源文档，提供可追溯的答案
+
+    Example:
+        >>> from blues_aka.rag.retrievers import create_retriever
+        >>> retriever = create_retriever(vector_store)
+        >>> agent = create_rag_agent(retriever, model="gpt-4")
+        >>> result = agent.invoke({"messages": [{"role": "user", "content": "问题"}]})
+    """
     logger.info("创建 RAG Agent")
 
     if model is None:
@@ -78,7 +133,35 @@ def format_rag_response(
     output: str,
     intermediate_steps: Optional[List] = None,
 ) -> Dict[str, Any]:
-    """格式化 RAG 响应，提取来源文档"""
+    """格式化 RAG 响应，提取来源文档
+
+    从 Agent 的执行结果中提取答案、来源文档和检索到的文档内容。
+
+    Args:
+        output (str): Agent 生成的回答文本
+        intermediate_steps (Optional[List]): Agent 执行过程中的中间步骤，
+            包含使用的工具和检索到的文档
+            默认值: None
+
+    Returns:
+        Dict[str, Any]: 格式化的响应字典，包含:
+            - answer (str): Agent 的回答
+            - sources (List[str]): 来源文档列表（去重后的文件路径）
+            - retrieved_documents (List): 检索到的文档对象列表
+
+    Note:
+        - 如果中间步骤为 None，返回只包含 answer 的字典
+        - sources 从文档的 metadata.source 或 metadata.filename 字段提取
+        - 只有当工具名称包含 "knowledge" 时才提取文档信息
+
+    Example:
+        >>> result = format_rag_response(
+        >>>     output="这是一个答案...",
+        >>>     intermediate_steps=agent_steps
+        >>> )
+        >>> print(result["answer"])
+        >>> print(result["sources"])
+    """
     response = {
         "answer": output,
         "sources": [],
@@ -110,7 +193,34 @@ def create_conversational_rag_agent(
     system_prompt: Optional[str] = None,
     **kwargs,
 ):
-    """创建支持对话历史的 RAG Agent"""
+    """创建支持对话历史的 RAG Agent
+
+    创建一个可以保持对话历史的 RAG Agent，实现多轮对话问答。
+
+    Args:
+        retriever (BaseRetriever): 向量检索器实例
+        model (Optional[str]): 使用的语言模型名称
+            默认值: None (使用配置文件中的默认模型)
+        system_prompt (Optional[str]): 系统提示词
+            默认值: None (使用默认提示词)
+        **kwargs: 传递给 create_rag_agent 的其他参数
+
+    Returns:
+        支持对话历史的 Agent 实例
+
+    Note:
+        - 该函数是 create_rag_agent 的别名，专门用于支持对话场景
+        - Agent 可以记住之前的对话上下文，实现连贯的多轮对话
+
+    Example:
+        >>> agent = create_conversational_rag_agent(retriever)
+        >>> # 第一轮对话
+        >>> result1 = agent.invoke({"messages": [{"role": "user", "content": "什么是AI？"}]})
+        >>> # 第二轮对话（可以引用之前的内容）
+        >>> result2 = agent.invoke({"messages": [
+        >>>     {"role": "user", "content": "它有哪些应用？"}
+        >>> ]})
+    """
     logger.info("创建对话式 RAG Agent")
     return create_rag_agent(
         retriever=retriever,
@@ -125,7 +235,33 @@ def query_rag_agent(
         query: str,
         return_sources: bool = True,
 ) -> Dict[str, Any]:
-    """查询 RAG Agent 的便捷函数"""
+    """查询 RAG Agent 的便捷函数
+
+    向 RAG Agent 发送查询并获取格式化的响应结果。
+
+    Args:
+        agent: RAG Agent 实例
+        query (str): 用户查询问题
+        return_sources (bool): 是否返回来源信息（当前版本未使用此参数）
+            默认值: True
+
+    Returns:
+        Dict[str, Any]: 格式化的响应字典，包含:
+            - answer (str): Agent 的回答
+
+    Raises:
+        Exception: 查询执行失败时抛出异常
+
+    Note:
+        - 自动处理 Agent 的输入格式，使用 LangChain 1.0.3 的消息格式
+        - 从返回结果中提取最后一条消息的内容作为答案
+        - 查询前会记录日志（截取前50个字符）
+
+    Example:
+        >>> agent = create_rag_agent(retriever)
+        >>> result = query_rag_agent(agent, "什么是深度学习？")
+        >>> print(result["answer"])
+    """
     logger.info(f"查询 RAG Agent: {query[:50]}...")
 
     try:
@@ -158,7 +294,34 @@ async def aquery_rag_agent(
         query: str,
         return_sources: bool = True,
 ) -> Dict[str, Any]:
-    """异步查询 RAG Agent"""
+    """异步查询 RAG Agent
+
+    异步向 RAG Agent 发送查询并获取格式化的响应结果。
+
+    Args:
+        agent: RAG Agent 实例
+        query (str): 用户查询问题
+        return_sources (bool): 是否返回来源信息（当前版本未使用此参数）
+            默认值: True
+
+    Returns:
+        Dict[str, Any]: 格式化的响应字典，包含:
+            - answer (str): Agent 的回答
+
+    Raises:
+        Exception: 查询执行失败时抛出异常
+
+    Note:
+        - 这是 query_rag_agent 的异步版本，适用于需要异步处理的场景
+        - 使用 agent.ainvoke 进行异步调用
+        - 自动处理 Agent 的输入格式，使用 LangChain 1.0.3 的消息格式
+        - 从返回结果中提取最后一条消息的内容作为答案
+
+    Example:
+        agent = create_rag_agent(retriever)
+        result = await aquery_rag_agent(agent, "什么是深度学习？")
+        print(result["answer"])
+    """
     logger.info(f"异步查询 RAG Agent: {query[:50]}...")
 
     try:
