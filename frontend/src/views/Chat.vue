@@ -66,6 +66,16 @@
 
           <!-- AI消息 -->
           <div v-else class="assistant-message">
+            <!-- 推理过程显示(已保存的消息) -->
+            <div v-if="message.reasoning && message.reasoning.content" class="reasoning-container">
+              <div class="reasoning-header">
+                <el-icon class="reasoning-icon"><MagicStick /></el-icon>
+                <span class="reasoning-title">深度思考过程</span>
+                <el-tag size="small" type="success">已完成</el-tag>
+              </div>
+              <div class="reasoning-content markdown-content" v-html="renderMarkdown(message.reasoning.content)"></div>
+            </div>
+
             <div class="assistant-message-text markdown-content" v-html="renderMarkdown(message.content)"></div>
             <div class="message-actions">
               <el-button text size="small" @click="copyMessage(message.content)">
@@ -100,7 +110,18 @@
         </div>
 
         <!-- 正在输入的AI消息 -->
-        <div v-if="isStreaming && streamingContent" class="message-item assistant streaming-message">
+        <div v-if="isStreaming && (streamingContent || streamingReasoning)" class="message-item assistant streaming-message">
+          <!-- 推理过程显示 -->
+          <div v-if="streamingReasoning" class="reasoning-container">
+            <div class="reasoning-header">
+              <el-icon class="reasoning-icon"><MagicStick /></el-icon>
+              <span class="reasoning-title">深度思考过程</span>
+              <el-tag size="small" type="warning">推理中</el-tag>
+            </div>
+            <div class="reasoning-content markdown-content" v-html="renderMarkdown(streamingReasoning)"></div>
+          </div>
+
+          <!-- 最终内容显示 -->
           <div class="assistant-message-text markdown-content streaming-text" v-html="renderMarkdown(streamingContent)"></div>
           <div class="message-actions streaming-actions">
             <el-button text size="small" @click="copyStreamingContent" :disabled="!streamingContent">
@@ -115,7 +136,7 @@
         </div>
 
         <!-- 空白流式状态指示器 -->
-        <div v-if="isStreaming && !streamingContent" class="message-item assistant streaming-message">
+        <div v-if="isStreaming && !streamingContent && !streamingReasoning" class="message-item assistant streaming-message">
           <div class="typing-indicator">
             <span></span>
             <span></span>
@@ -184,6 +205,27 @@
           <el-tooltip
             v-if="conversation?.agent?.enable_web_search"
             content="该智能体默认启用联网搜索"
+            placement="top"
+          >
+            <el-icon class="info-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
+        </div>
+
+        <!-- 分隔线 -->
+        <el-divider direction="vertical" class="tool-divider" />
+
+        <!-- 深度思考开关 -->
+        <div class="tool-section thinking-section">
+          <el-icon class="tool-icon thinking-icon"><MagicStick /></el-icon>
+          <span class="tool-label">深度思考</span>
+          <el-switch
+            v-model="showReasoning"
+            active-text="开"
+            inactive-text="关"
+            size="default"
+          />
+          <el-tooltip
+            content="启用深度思考功能，让AI在回答前进行详细推理。注意：需要使用支持深度思考的模型（如glm-4-plus），并且仅对复杂问题触发推理过程"
             placement="top"
           >
             <el-icon class="info-icon"><InfoFilled /></el-icon>
@@ -267,7 +309,7 @@
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Reading, Management, Check, Loading, CircleClose, Search, InfoFilled } from '@element-plus/icons-vue'
+import { Reading, Management, Check, Loading, CircleClose, Search, InfoFilled, MagicStick } from '@element-plus/icons-vue'
 import { chatApi, conversationApi, agentApi } from '../api/agent'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
 import { renderMarkdown } from '../utils/markdown'
@@ -284,6 +326,8 @@ const conversation = ref(null)
 const conversationId = ref(null)
 const isStreaming = ref(false)
 const streamingContent = ref('')
+const streamingReasoning = ref('')
+const isReasoningPhase = ref(false)
 const abortController = ref(null)
 
 // 知识库相关状态
@@ -293,6 +337,9 @@ const kbManagerVisible = ref(false)
 
 // 联网搜索相关状态
 const enableWebSearch = ref(false)
+
+// 深度思考相关状态
+const showReasoning = ref(false)
 
 // 输入相关
 const inputMessage = ref('')
@@ -381,13 +428,18 @@ const sendMessage = async (useStream = true) => {
 
 // 流式发送消息
 const sendMessageStream = async (content) => {
+  // 用户消息对象，用于错误时移除
+  let userMessage = null
+
   try {
     isStreaming.value = true
     streamingContent.value = ''
+    streamingReasoning.value = ''
+    isReasoningPhase.value = false
     abortController.value = new AbortController()
 
     // 立即将用户消息添加到消息列表中显示
-    const userMessage = {
+    userMessage = {
       id: Date.now(), // 临时ID,后端会返回真实ID
       role: 'user',
       content: content,
@@ -409,7 +461,8 @@ const sendMessageStream = async (content) => {
       body: JSON.stringify({
         content,
         stream: true,
-        enable_web_search: enableWebSearch.value
+        enable_web_search: enableWebSearch.value,
+        show_reasoning: showReasoning.value
       }),
       signal: abortController.value.signal
     })
@@ -435,31 +488,62 @@ const sendMessageStream = async (content) => {
 
             if (data.type === 'start') {
               // 开始流式响应
+              if (data.reasoning_enabled) {
+                isReasoningPhase.value = true
+              }
+            } else if (data.type === 'reasoning') {
+              // 推理内容
+              streamingReasoning.value += data.content
+              isReasoningPhase.value = true
+              await nextTick()
+              scrollToBottom()
+            } else if (data.type === 'reasoning_end') {
+              // 推理结束
+              isReasoningPhase.value = false
+            } else if (data.type === 'content') {
+              // 最终内容(推理模式)或普通token模式
+              streamingContent.value += data.content
+              await nextTick()
+              scrollToBottom()
             } else if (data.type === 'token') {
+              // 普通模式的token(非推理模式)
               streamingContent.value += data.content
               await nextTick()
               scrollToBottom()
             } else if (data.type === 'end') {
               // 先保存流式内容
               const finalContent = streamingContent.value
+              const finalReasoning = streamingReasoning.value
 
               // 添加到消息列表
-              messages.value.push({
+              const messageData = {
                 id: data.message_id,
                 role: 'assistant',
                 content: finalContent,
                 created_at: new Date().toISOString()
-              })
+              }
+
+              // 如果有推理过程,添加到消息中
+              if (finalReasoning) {
+                messageData.reasoning = {
+                  content: finalReasoning,
+                  length: finalReasoning.length
+                }
+              }
+
+              messages.value.push(messageData)
 
               // 等待消息添加完成后，再清空流式状态
               await nextTick()
 
               // 使用平滑过渡，先隐藏流式消息
               streamingContent.value = ''
+              streamingReasoning.value = ''
 
               // 延迟重置流式状态，让DOM有时间渲染
               setTimeout(() => {
                 isStreaming.value = false
+                isReasoningPhase.value = false
               }, 50)
 
               // 滚动到底部
@@ -468,6 +552,7 @@ const sendMessageStream = async (content) => {
             } else if (data.type === 'error') {
               ElMessage.error(data.message || '发送消息失败')
               streamingContent.value = ''
+              streamingReasoning.value = ''
             }
           } catch (e) {
             // 忽略解析错误
@@ -485,8 +570,17 @@ const sendMessageStream = async (content) => {
     } else {
       console.error('发送消息失败:', error)
       ElMessage.error('发送消息失败')
+
+      // 移除临时添加的用户消息
+      if (userMessage) {
+        const index = messages.value.findIndex(m => m.id === userMessage.id)
+        if (index !== -1) {
+          messages.value.splice(index, 1)
+        }
+      }
     }
     streamingContent.value = ''
+    streamingReasoning.value = ''
   } finally {
     isStreaming.value = false
     abortController.value = null
@@ -512,7 +606,8 @@ const sendMessageNormal = async (content) => {
     const response = await chatApi.chat(conversationId.value, {
       content,
       stream: false,
-      enable_web_search: enableWebSearch.value
+      enable_web_search: enableWebSearch.value,
+      show_reasoning: showReasoning.value
     })
 
     if (response.code === 200) {
@@ -777,6 +872,7 @@ const createNewChat = async () => {
       conversationId.value = response.data.id
       messages.value = []
       await fetchConversation()
+      await fetchMessages()  // 添加这行，加载新对话的消息
     }
   } catch (error) {
     console.error('创建失败:', error)
@@ -904,10 +1000,15 @@ onMounted(async () => {
   await loadKnowledgeBases()
 })
 
-// 监听对话ID变化，重新加载知识库配置
-watch(conversationId, async (newId) => {
-  if (newId) {
+// 监听对话ID变化，重新加载对话信息和消息
+watch(conversationId, async (newId, oldId) => {
+  if (newId && newId !== oldId) {
+    // 清空当前消息，避免显示旧对话的消息
+    messages.value = []
     await fetchConversation()
+    await fetchMessages()  // 添加这行，加载新对话的消息
+
+    // 更新知识库配置
     if (conversation.value?.enable_rag) {
       selectedKnowledgeBase.value = conversation.value.rag_index_name
     } else {
@@ -1113,6 +1214,78 @@ watch(conversationId, async (newId) => {
 .rated-btn {
   color: #f59e0b !important;
   font-weight: 400;
+}
+
+/* 推理过程样式 */
+.reasoning-container {
+  margin-bottom: 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fafafa;
+}
+
+.reasoning-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #f4f4f5;
+  border-bottom: 1px solid #e4e4e7;
+}
+
+.reasoning-icon {
+  font-size: 16px;
+  color: #8b5cf6;
+}
+
+.reasoning-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #52525b;
+  flex: 1;
+}
+
+.reasoning-content {
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #71717a;
+  max-height: 400px;
+  overflow-y: auto;
+  background: white;
+}
+
+.reasoning-content :deep(p) {
+  margin: 4px 0;
+}
+
+.reasoning-content :deep(code) {
+  background: #f4f4f5;
+  color: #71717a;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.reasoning-content :deep(pre) {
+  background: #f4f4f5;
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+/* 深度思考开关样式 */
+.thinking-section {
+  flex: 1;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.thinking-icon {
+  color: #8b5cf6;
 }
 
 .typing-indicator {

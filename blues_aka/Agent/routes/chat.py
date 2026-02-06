@@ -122,6 +122,7 @@ def chat(conversation_id):
         stream = data.get('stream', True)
         content = data.get('content')
         enable_web_search = data.get('enable_web_search')
+        show_reasoning = data.get('show_reasoning', False)
         logger.info(f"收到聊天请求 - conversation_id: {conversation_id}, user_id: {user_id}, stream: {stream}")
         logger.info(f"消息内容: {content[:100]}..." if len(content) > 100 else f"消息内容: {content}")
 
@@ -162,6 +163,7 @@ def chat(conversation_id):
             agent_config = {
                 'model': conversation.agent.model,
                 'system_prompt': conversation.agent.system_prompt,
+                'enable_thinking': show_reasoning
                 # 不传递 tools，让 BaseAgent 使用默认工具
                 # 注意：temperature 和 max_tokens 应该在模型层面配置，不传给 BaseAgent
             }
@@ -213,19 +215,37 @@ def chat(conversation_id):
             raise
         # 流式和非流式输出
         if stream:
-            try:
-                response = Response(
-                    stream_with_context(generate_streaming_response(agent, content, chat_history, conversation_id, user_id)),
-                    mimetype='text/event-stream',
-                    headers={
-                        'Cache-Control': 'no-cache',
-                        'X-Accel-Buffering': 'no'
-                    }
-                )
-                return response
-            except Exception as e:
-                logger.error(f"流式响应创建失败: {str(e)}", exc_info=True)
-                raise Exceptions.Chat.message_send_failed(f"流式响应创建失败: {str(e)}")
+            if show_reasoning:
+                try:
+                    response = Response(
+                        stream_with_context(generate_streaming_response_with_thinking(agent, content, chat_history, conversation_id, user_id)),
+                        mimetype='text/event-stream',
+                        headers={
+                            'Cache-Control': 'no-cache',
+                            'X-Accel-Buffering': 'no'
+                        }
+                    )
+                    return response
+                except Exception as e:
+                    logger.error(f"流式响应创建失败: {str(e)}", exc_info=True)
+                    raise Exceptions.Chat.message_send_failed(f"流式响应创建失败: {str(e)}")
+
+            else:
+                try:
+                    response = Response(
+                        stream_with_context(generate_streaming_response(agent, content, chat_history, conversation_id, user_id)),
+                        mimetype='text/event-stream',
+                        headers={
+                            'Cache-Control': 'no-cache',
+                            'X-Accel-Buffering': 'no'
+                        }
+                    )
+                    return response
+
+                except Exception as e:
+                    logger.error(f"流式响应创建失败: {str(e)}", exc_info=True)
+                    raise Exceptions.Chat.message_send_failed(f"流式响应创建失败: {str(e)}")
+
         else:
             response_content = agent.invoke(input_text=content, chat_history=chat_history)
 
@@ -407,6 +427,100 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
         except:
             pass
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+def generate_streaming_response_with_thinking(
+    agent, content, chat_history, conversation_id, user_id
+):
+    """
+    生成带推理信息的流式响应
+
+    SSE 事件格式：
+        - start: 开始事件
+        - reasoning: 推理内容事件
+        - content: 最终内容事件
+        - end: 结束事件
+        - error: 错误事件
+    """
+    ai_message = None
+    message_id = None
+
+    try:
+        logger.info(f"开始生成流式响应(推理) - conversation_id: {conversation_id}")
+
+        ai_message = Message(
+            conversation_id=conversation_id,
+            content='',
+            user_id=user_id,
+            role='assistant',
+        )
+        db.session.add(ai_message)
+        db.session.flush()
+        message_id = ai_message.id
+        yield f"data: {json.dumps({'type': 'start', 'message_id': message_id, 'reasoning_enabled': True})}\n\n"
+        full_reasoning = []
+        full_content = []
+        reasoning_done = False
+        content_started = False
+
+        logger.info("开始进行推理")
+        for event in agent.streaming_with_thinking(input_text=content, chat_history=chat_history):
+            logger.info(event)
+            event_type = event.get('type', 'unknown')
+
+            if event_type == 'reasoning':
+                reasoning_text = event.get('content', "")
+                full_reasoning.append(reasoning_text)
+                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning_text})}\n\n"
+
+                if not content_started:
+                    logger.debug("推理阶段进行中...")
+
+            elif event_type == 'content':
+                content_text = event.get('content', "")
+                full_content.append(content_text)
+                content_started = True
+
+                if not reasoning_done and full_reasoning:
+                    yield f"data: {json.dumps({'type': 'reasoning_end', 'total_length': sum(len(r) for r in full_reasoning)})}\n\n"
+                    reasoning_done = True
+                    logger.info("推理阶段结束，开始输出最终答案")
+
+                yield f"data: {json.dumps({'type': 'content', 'content': content_text})}\n\n"
+
+            elif event_type == 'error':
+                yield f"data: {json.dumps({'type': 'error', 'message': event.get('content')})}\n\n"
+                raise Exception(event.get('content'))
+
+        # 流式生成完成后，保存消息到数据库
+        final_content = ''.join(full_content)
+        ai_message.content = final_content
+        db.session.add(ai_message)
+        db.session.commit()
+
+        try:
+            conversion = Conversation.query.get(conversation_id)
+
+            if conversion:
+                conversion.message_count = Message.query.filter_by(conversation_id=conversation_id).count()
+                conversion.last_message_at = func.now()
+                db.session.add(conversion)
+                db.session.commit()
+
+        except Exception as db_error:
+            logger.error(f"更新对话统计失败: {str(db_error)}", exc_info=True)
+            db.session.rollback()
+
+        yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n"
+
+    except Exception as e:
+        logger.error(f"流式响应生成失败: {str(e)}", exc_info=True)
+        try:
+            db.session.rollback()
+        except:
+            pass
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+
 
 @chat_bp.route('/conversations/<int:conversation_id>/messages', methods=['GET'])
 @jwt_required()

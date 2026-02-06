@@ -36,6 +36,8 @@ AI模型管理模块
 import logging
 from typing import Optional, Any, Dict
 
+# 新的导入方式
+from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_community.chat_models.zhipuai import ChatZhipuAI
 from blues_aka.config.config import ConfigFactory
@@ -51,6 +53,7 @@ def get_chat_model(
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         streaming: Optional[bool] = None,
+        thinking_type: Optional[str] = None,
         **kwargs: Any
 ) -> BaseChatModel:
     """
@@ -107,7 +110,25 @@ def get_chat_model(
     elif _config.default_max_token is not None:
         model_config['max_tokens'] = _config.default_max_token
 
+    if thinking_type is not None:
+        # 智谱AI深度思考配置
+        # 注意：只有部分模型支持深度思考功能，如 glm-4-plus
+        if thinking_type == "enabled":
+            model_config['thinking'] = {
+                "type": "enabled"  # 或者使用 "auto"
+            }
+            logger.info(f"模型 {model_name} 深度思考模式: {thinking_type}")
+        elif thinking_type == "auto":
+            model_config['thinking'] = {
+                "type": "auto"
+            }
+            logger.info(f"模型 {model_name} 深度思考模式: auto")
+        else:
+            model_config['thinking'] = {"type": thinking_type}
+            logger.info(f"模型 {model_name} 深度思考模式: {thinking_type}")
+
     model_config.update(kwargs)
+    logger.info(model_config)
 
     try:
         model = ChatZhipuAI(**model_config)
@@ -146,6 +167,31 @@ def get_streaming_model(
         - 可以通过模型的stream方法逐步获取生成内容
     """
     return get_chat_model(model_name=model_name, temperature=temperature, streaming=True, **kwargs)
+
+def get_thinking_model(
+    model_name: Optional[str] = None,
+    **kwargs: Any
+) -> BaseChatModel:
+    """
+    获取启用深度思考的模型（便捷方法）
+
+    Args:
+        model_name: 模型名称
+        **kwargs: 其他参数
+
+    Returns:
+        BaseChatModel: 启用深度思考的模型实例
+
+    Example:
+        >>> model = get_thinking_model(model_name="glm-4.7")
+        >>> for chunk in model.stream("分析一下量子计算的原理"):
+        ...     print(chunk.content, end="")
+    """
+    return get_chat_model(
+        model_name=model_name,
+        thinking_type="enabled",
+        **kwargs
+    )
 
 def getStructuredOutputModel(
         model_name: Optional[str] = None,

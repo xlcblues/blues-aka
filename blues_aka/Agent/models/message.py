@@ -35,6 +35,9 @@ class Message(db.Model):
 
     is_deleted = Column(Boolean, default=False, index=True)
 
+    reasoning_data = db.Column(db.JSON, comment="推理过程数据（包含 content 和 length）")
+    has_reasoning = db.Column(db.Boolean, default=False, comment="是否包含推理信息")
+
     # 关系
     user = db.relationship('User', backref=db.backref('messages', lazy='dynamic', cascade='all, delete-orphan'))
 
@@ -42,7 +45,7 @@ class Message(db.Model):
         return f'<Message {self.id} - {self.role}>'
 
     def to_dict(self):
-        return {
+        data = {
             'id': self.id,
             'conversation_id': self.conversation_id,
             'role': self.role,
@@ -57,6 +60,11 @@ class Message(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+        if self.has_reasoning and self.reasoning_data:
+            data['reasoning'] = self.reasoning_data
+
+        return data
 
     def add_feedback(self, rating, feedback_text=None):
         """添加反馈"""

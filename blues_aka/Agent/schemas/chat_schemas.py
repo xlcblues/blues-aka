@@ -21,3 +21,7 @@ class ChatSchema(Schema):
     content = fields.Str(required=True, validate=validate.Length(min=1, max=10000))
     stream = fields.Bool(missing=False)
     enable_web_search = fields.Bool(missing=None)
+    show_reasoning = fields.Bool(
+        missing=False,
+        description="是否显示推理过程（启用深度思考）"
+    )

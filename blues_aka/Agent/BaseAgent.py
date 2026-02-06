@@ -47,7 +47,9 @@ Author: Blues AKA Team
 """
 
 import logging
-from typing import Optional, Union, Sequence, Any, List, Iterator, Literal, AsyncIterator
+from importlib.metadata import metadata
+from typing import Optional, Union, Sequence, Any, List, Iterator, Literal, AsyncIterator, Tuple, Dict
+from datetime import datetime
 
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
@@ -136,6 +138,7 @@ class BaseAgent:
             enable_rag: bool = False,
             rag_index_name: Optional[str] = None,
             rag_config: Optional[dict] = None,
+            enable_thinking: bool = False,
             **kwargs: Any):
         """
         初始化智能体实例
@@ -210,24 +213,39 @@ class BaseAgent:
 
         # 初始化模型 - 将字符串转换为模型实例
         if model is None:
-            # 使用默认模型
-            self.model = get_chat_model(model_name=_config.default_model)
-            logger.info(f"使用默认模型: {_config.default_model}")
+            if enable_thinking:
+                self.model = get_chat_model(
+                    model_name=_config.default_model,
+                    thinking_type="enabled"
+                )
+                logger.info(f"使用默认模型（启用深度思考）: {_config.default_model}")
+            else:
+                self.model = get_chat_model(model_name=_config.default_model)
+                logger.info(f"使用默认模型: {_config.default_model}")
+
         elif isinstance(model, str):
             # 如果是字符串，创建模型实例
             # 检查是否已经有提供商前缀 (如 "zhipuai:glm-4.5")
             if ':' in model:
                 # 有前缀，直接使用
-                self.model = get_chat_model(model_name=model.split(':', 1)[1])
-                logger.info(f"使用模型（带前缀）: {model}")
+                if enable_thinking:
+                    self.model = get_chat_model(model_name=model.split(':', 1)[1], thinking_type="enabled")
+                    logger.info(f"使用模型（带前缀）: {model}")
+                else:
+                    self.model = get_chat_model(model_name=model.split(':', 1)[1], thinking_type="disabled")
             else:
                 # 没有前缀，使用模型名称
-                self.model = get_chat_model(model_name=model)
-                logger.info(f"使用模型: {model}")
+                if enable_thinking:
+                    self.model = get_chat_model(model_name=model, thinking_type="enabled")
+                    logger.info(f"使用模型: {model}")
+                else:
+                    self.model = get_chat_model(model_name=model, thinking_type="disabled")
+
         else:
-            # 已经是模型实例，直接使用
             self.model = model
-            logger.info("使用传入的模型实例")
+            self.model = model
+            if enable_thinking:
+                logger.warning("传入的是模型实例，无法自动启用深度思考")
 
         # 初始化工具
         if tools is None:
@@ -263,6 +281,7 @@ class BaseAgent:
             self.system_prompt = system_prompt
 
         self.debug = debug
+        self.enable_thinking = enable_thinking
 
         try:
             # 创建Agent
@@ -1039,6 +1058,112 @@ class BaseAgent:
         except Exception as e:
             logger.error(f"创建RAG工具失败: {e}")
             return None
+
+    def streaming_with_thinking(
+            self,
+            input_text: str,
+            chat_history: Optional[List[BaseMessage]] = None,
+            **kwargs: Any
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        流式调用智能体（支持深度思考）
+
+        返回包含推理内容和最终内容的字典
+
+        Args:
+            input_text: 用户输入
+            chat_history: 聊天历史
+            **kwargs: 额外参数
+
+        Yields:
+            Dict[str, Any]: 包含 type 和 content/data 的字典
+                - type: "reasoning" | "content" | "error"
+                - content: 文本内容
+                - data: 额外数据（可选）
+
+        Example:
+            >>> for event in agent.streaming_with_thinking("分析这个问题"):
+            ...     if event['type'] == 'reasoning':
+            ...         print(f"思考: {event['content']}")
+            ...     elif event['type'] == 'content':
+            ...         print(f"回答: {event['content']}")
+        """
+        try:
+            messages = []
+
+            if chat_history:
+                messages.extend(chat_history)
+
+            messages.append(HumanMessage(content=input_text))
+
+            graph_input = {"messages": messages}
+            graph_input.update(kwargs)
+            command_input = Command(update=graph_input)
+
+            for chunk in self.graph.stream(input=command_input, stream_mode="messages"):
+                if isinstance(chunk, tuple) and len(chunk) == 2:
+                    message, metadata_t = chunk
+                    if isinstance(message, AIMessage):
+                        yield from self._yield_message_content(message)
+                elif isinstance(chunk, AIMessage):
+                    yield from self._yield_message_content(chunk)
+
+            logger.info("Agent 流式调用完成")
+
+        except Exception as e:
+            error_msg = f"Agent 执行失败: {str(e)}"
+            logger.error(error_msg)
+            yield {
+                "type": "error",
+                "content": f"抱歉，处理您的请求时出现错误: {str(e)}"
+            }
+
+    def _yield_message_content(self, message: AIMessage):
+        """
+        提取并 yield 消息中的推理内容和最终内容
+
+        Args:
+            message: AIMessage 对象
+        """
+        if hasattr(message, "content_blocks") and message.content_blocks:
+            for block in message.content_blocks:
+                if isinstance(block, dict) and block.get("type") == "reasoning":
+                    yield {
+                        "type": "reasoning",
+                        "content": block.get("text", ""),
+                        "timestamp": self._get_timestamp()
+                    }
+                elif isinstance(block, dict) and block.get("type") == "text":
+                    # 最终内容
+                    yield {
+                        "type": "content",
+                        "content": block.get("text", ""),
+                        "timestamp": self._get_timestamp()
+                    }
+
+        elif self.enable_thinking and hasattr(message, 'reasoning_content'):
+            if message.reasoning_content:
+                yield {
+                    "type": "reasoning",
+                    "content": message.reasoning_content,
+                    "timestamp": self._get_timestamp()
+                }
+            yield {
+                "type": "content",
+                "content": message.content,
+                "timestamp": self._get_timestamp()
+            }
+
+        else:
+            yield {
+                "type": "content",
+                "content": message.content,
+                "timestamp": self._get_timestamp()
+            }
+
+    def _get_timestamp(self) -> str:
+        """获取当前时间戳"""
+        return datetime.now().isoformat()
 
 # 创建智能体
 def create_base_agent(
