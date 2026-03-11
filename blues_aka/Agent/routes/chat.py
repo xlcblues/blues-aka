@@ -483,7 +483,7 @@ def generate_streaming_response_with_thinking(
                 if not reasoning_done and full_reasoning:
                     yield f"data: {json.dumps({'type': 'reasoning_end', 'total_length': sum(len(r) for r in full_reasoning)})}\n\n"
                     reasoning_done = True
-                    logger.info("推理阶段结束，开始输出最终答案")
+                    logger.debug("推理阶段结束，开始输出最终答案")
 
                 yield f"data: {json.dumps({'type': 'content', 'content': content_text})}\n\n"
 

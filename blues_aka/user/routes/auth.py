@@ -31,7 +31,7 @@ def login():
         password = data['password']
 
         user = User.query.filter_by(username=username).first()
-        logger.info("校验中")
+        logger.debug("校验中")
 
         if not user or user.is_deleted:
             raise E.User.user_not_found()

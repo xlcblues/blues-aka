@@ -76,7 +76,7 @@ def get_embeddings(
             **kwargs
         )
 
-        logger.debug(f"Embedding 模型创建成功")
+        logger.info(f"Embedding 模型创建成功")
         return embeddings
 
     except Exception as e:

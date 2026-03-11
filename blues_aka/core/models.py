@@ -41,6 +41,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_community.chat_models.zhipuai import ChatZhipuAI
 from blues_aka.config.config import ConfigFactory
+from blues_aka.core.chat_models import ChatZhipuAIWithThinking
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,7 @@ def get_chat_model(
     logger.info(model_config)
 
     try:
-        model = ChatZhipuAI(**model_config)
+        model = ChatZhipuAIWithThinking(**model_config)
         return model
     except Exception as e:
         logger.error(f"模型创建失败: {e}")

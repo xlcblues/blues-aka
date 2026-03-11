@@ -154,7 +154,7 @@ def init_scheduler(app=None):
             for job in scheduler.get_jobs():
                 logger.info(f"  - {job.id}: {job.name} ({job.next_run_time})")
         else:
-            logger.info("调试模式下跳过调度器启动")
+            logger.debug("调试模式下跳过调度器启动")
 
     return scheduler
 

@@ -117,7 +117,7 @@ def create_rag_agent(
         description=tool_description,
     )
     tools = [retriever_tool]
-    logger.debug("创建 Agent...")
+    logger.info("创建 Agent...")
     agent = create_agent(
         model=model,
         system_prompt=system_prompt,

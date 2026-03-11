@@ -1100,7 +1100,11 @@ class BaseAgent:
             graph_input.update(kwargs)
             command_input = Command(update=graph_input)
 
-            for chunk in self.graph.stream(input=command_input, stream_mode="messages"):
+            for chunk in self.graph.stream(
+                    input=command_input,
+                    stream_mode="messages",
+            ):
+                logger.info(chunk)
                 if isinstance(chunk, tuple) and len(chunk) == 2:
                     message, metadata_t = chunk
                     if isinstance(message, AIMessage):
@@ -1125,6 +1129,7 @@ class BaseAgent:
         Args:
             message: AIMessage 对象
         """
+
         if hasattr(message, "content_blocks") and message.content_blocks:
             for block in message.content_blocks:
                 if isinstance(block, dict) and block.get("type") == "reasoning":
