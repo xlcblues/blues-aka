@@ -60,6 +60,7 @@ from blues_aka.common.exception import BusinessException
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.extensions import db
+from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger(__name__)
 agent_bp = Blueprint('agent', __name__, url_prefix='/agent')
@@ -244,7 +245,11 @@ def get_agent():
 
         logger.info(f"查询智能体列表 - user_id: {user_id}, is_public_param: {is_public_param}, is_public: {is_public}")
 
-        query = Agent.query
+        # 使用 eager loading 避免 N+1 查询问题
+        query = Agent.query.options(
+            joinedload(Agent.user),
+            joinedload(Agent.conversations)
+        )
 
         if is_public is True:
             # 查询所有公开的智能体(包含自己的)

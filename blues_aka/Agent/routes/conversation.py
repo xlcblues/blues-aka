@@ -73,6 +73,7 @@ from blues_aka.rag.loader import load_document, load_documents_from_paths, get_s
 from blues_aka.rag.splitters import split_documents
 from blues_aka.rag.embeddings import get_embeddings
 from blues_aka.extensions import db
+from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger(__name__)
 conversation_bp = Blueprint('conversation', __name__, url_prefix='/conversation')
@@ -244,7 +245,10 @@ def get_conversations():
         size = request.args.get('size', 20, type=int)
         status = request.args.get('status', 'active')
 
-        query = Conversation.query.filter_by(user_id=user_id, status=status)
+        # 使用 eager loading 避免 N+1 查询问题
+        query = Conversation.query.options(
+            joinedload(Conversation.agent)
+        ).filter_by(user_id=user_id, status=status)
 
         pagination = query.order_by(Conversation.last_message_at.desc().nullslast()).paginate(page=page, per_page=size, error_out=False)
 

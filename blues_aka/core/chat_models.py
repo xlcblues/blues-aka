@@ -1,6 +1,10 @@
 from typing import Optional, Dict, Any
 from pydantic import Field
 from langchain_community.chat_models import ChatZhipuAI
+import logging
+import json
+
+logger = logging.getLogger(__name__)
 
 class ChatZhipuAIWithThinking(ChatZhipuAI):
     """
