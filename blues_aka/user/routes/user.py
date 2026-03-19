@@ -5,6 +5,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity, current_user
 from marshmallow import ValidationError
 
+from blues_aka.common.cache import get_cache
 from blues_aka.common.error_codes import ErrorCodes
 from blues_aka.common.exception import BusinessException
 from blues_aka.common.exceptions import Exceptions, E
@@ -25,11 +26,44 @@ user_bp = Blueprint('user', __name__, url_prefix='/user')
 @handle_api_response
 @require_admin
 def get_users():
+    """
+    查询用户列表（带缓存）
 
+    缓存策略：
+        - 对于无筛选条件的查询，使用缓存（5分钟）
+        - 对于有筛选条件的查询，不使用缓存
+        - 缓存键格式: user_list:{page}:{per_page}:{sort_by}:{order_by}
+    """
     try:
         # 参数校验
         query_schemas = userQuerySchema()
         query_params = query_schemas.load(request.args)
+
+        # 生成缓存键
+        cache = get_cache()
+
+        # 检查是否有筛选条件（除了分页和排序）
+        has_filters = any([
+            query_params.get('id'),
+            query_params.get('username'),
+            query_params.get('email'),
+            query_params.get('nickname'),
+            query_params.get('phone')
+        ])
+
+        # 如果没有筛选条件，尝试使用缓存
+        if not has_filters and cache:
+            page = query_params.get('page', 1)
+            per_page = query_params.get('per_page', 10)
+            sort_by = query_params.get('sort_by', 'created_at')
+            order_by = query_params.get('order_by', 'desc')
+
+            cache_key = f"user_list:{page}:{per_page}:{sort_by}:{order_by}"
+            cached_result = cache.get(cache_key)
+
+            if cached_result is not None:
+                logger.info(f"从缓存获取用户列表: {cache_key}")
+                return success(data=cached_result)
 
         # 构建查询，默认过滤已删除的用户
         query = User.query.filter(User.status != 'deleted')
@@ -90,7 +124,7 @@ def get_users():
         users = user_schema.dump(pagination.items)
 
         # 构建响应数据
-        response = {
+        response_data = {
             'users': users,
             'pagination': {
                 'page': pagination.page,
@@ -100,7 +134,12 @@ def get_users():
             }
         }
 
-        return success(data=response)
+        # 如果没有筛选条件，将结果存入缓存（5分钟）
+        if not has_filters and cache:
+            cache.set(cache_key, response_data, timeout=300)
+            logger.info(f"用户列表已缓存: {cache_key}")
+
+        return success(data=response_data)
 
     except ValidationError as e:
         raise E.Common.invalid_params()
@@ -161,6 +200,12 @@ def create_user():
 
         db.session.add(new_user)
         db.session.commit()
+
+        # 清除用户列表缓存
+        cache = get_cache()
+        if cache:
+            cache.invalidate_pattern('user_list:*')
+            logger.info("用户创建后清除用户列表缓存")
 
         response = userCreateRespSchema()
         result = response.dump(new_user)
@@ -232,6 +277,12 @@ def update_user(id):
 
         db.session.commit()
 
+        # 清除用户列表缓存
+        cache = get_cache()
+        if cache:
+            cache.invalidate_pattern('user_list:*')
+            logger.info("用户更新后清除用户列表缓存")
+
         response = userUpdateRespSchema()
         result = response.dump(user)
         return success(data=result, message='用户信息更新成功！')
@@ -276,6 +327,12 @@ def delete_user(id):
         # 执行软删除
         user.soft_delete()
         db.session.commit()
+
+        # 清除用户列表缓存
+        cache = get_cache()
+        if cache:
+            cache.invalidate_pattern('user_list:*')
+            logger.info("用户删除后清除用户列表缓存")
 
         logger.info(f"用户 {user.username} (ID: {id}) 已被软删除")
 

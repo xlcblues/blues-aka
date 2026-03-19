@@ -12,19 +12,25 @@ from .jwt import init_jwt
 from .logger import init_logger
 from blues_aka.common.exceptionHandles import register_error_handlers
 from blues_aka.tasks import init_scheduler
+from blues_aka.common.cache import init_cache
 
 def create_app(config_name):
     app = Flask(__name__, static_folder=None)
     config = ConfigFactory.get_config(config_name)
     app.config.update(config.dict())
+
+    # 先初始化日志系统，以便其他模块可以输出日志
+    init_logger(app)
+
+    # 初始化其他扩展
     init_extensions(app)
+    init_cache(app)
 
     # 配置前端静态文件服务（在注册API蓝图之前）
     setup_frontend_static(app)
 
     # 注册API蓝图
     init_blueprints(app)
-    init_logger(app)
     init_jwt(app)
     register_error_handlers(app)
 

@@ -11,7 +11,13 @@
       "Bash(npm run dev:*)",
       "Bash(netstat:*)",
       "Bash(cat:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(if:*)",
+      "Bash(then cat requirements.txt)",
+      "Bash(else echo \"File not found\")",
+      "Bash(fi:*)",
+      "Bash(redis-cli ping:*)",
+      "Bash(pip install:*)"
     ],
     "deny": [],
     "ask": []

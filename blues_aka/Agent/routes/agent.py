@@ -55,6 +55,7 @@ from marshmallow import ValidationError
 
 from blues_aka.Agent.models.agent import Agent
 from blues_aka.Agent.schemas import CreateAgentSchema, UpdateAgentSchema
+from blues_aka.common.cache import get_cache
 from blues_aka.common.error_codes import ErrorCodes
 from blues_aka.common.exception import BusinessException
 from blues_aka.common.response import success
@@ -150,6 +151,12 @@ def create_agent():
         db.session.add(agent)
         db.session.commit()
 
+        # 清除智能体列表缓存
+        cache = get_cache()
+        if cache:
+            cache.invalidate_pattern('agent_list:*')
+            logger.info("智能体创建后清除智能体列表缓存")
+
         return success(data=agent.to_dict(), message='智能体创建成功')
 
 
@@ -175,10 +182,15 @@ def create_agent():
 @handle_api_response
 def get_agent():
     """
-    获取智能体列表
+    获取智能体列表（带缓存）
 
     支持分页查询和筛选功能，可以根据是否公开来过滤智能体。
     用户可以查看所有公开的智能体和自己创建的所有智能体。
+
+    缓存策略：
+        - 对于公开智能体查询，使用缓存（5分钟）
+        - 对于私人智能体查询，不使用缓存
+        - 缓存键格式: agent_list:public:{page}:{size}
 
     请求头:
         Authorization: Bearer <access_token> (必需)
@@ -245,6 +257,16 @@ def get_agent():
 
         logger.info(f"查询智能体列表 - user_id: {user_id}, is_public_param: {is_public_param}, is_public: {is_public}")
 
+        # 尝试使用缓存（仅对公开智能体查询）
+        cache = get_cache()
+        if is_public is True and cache:
+            cache_key = f"agent_list:public:{page}:{page_size}"
+            cached_result = cache.get(cache_key)
+
+            if cached_result is not None:
+                logger.info(f"从缓存获取公开智能体列表: {cache_key}")
+                return success(data=cached_result)
+
         # 使用 eager loading 避免 N+1 查询问题
         query = Agent.query.options(
             joinedload(Agent.user),
@@ -271,6 +293,12 @@ def get_agent():
             'page': page,
             'size': page_size
         }
+
+        # 如果是公开智能体查询，将结果存入缓存（5分钟）
+        if is_public is True and cache:
+            cache_key = f"agent_list:public:{page}:{page_size}"
+            cache.set(cache_key, data, timeout=300)
+            logger.info(f"公开智能体列表已缓存: {cache_key}")
 
         return success(data=data)
 
@@ -450,6 +478,13 @@ def update_agent(agent_id):
                 setattr(agent, key, value)
 
         db.session.commit()
+
+        # 清除智能体列表缓存
+        cache = get_cache()
+        if cache:
+            cache.invalidate_pattern('agent_list:*')
+            logger.info("智能体更新后清除智能体列表缓存")
+
         logger.info(f"智能体更新成功, ID: {agent_id}")
         return success(data=agent.to_dict(), message="智能体更新成功")
 
@@ -523,6 +558,13 @@ def delete_agent(agent_id):
             )
         db.session.delete(agent)
         db.session.commit()
+
+        # 清除智能体列表缓存
+        cache = get_cache()
+        if cache:
+            cache.invalidate_pattern('agent_list:*')
+            logger.info("智能体删除后清除智能体列表缓存")
+
         return success(message="智能体删除成功")
     except Exception as e:
         db.session.rollback()

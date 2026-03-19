@@ -42,6 +42,19 @@ class BaseConfig(BaseSettings):
     # CORS配置
     CORS_ORIGINS: List[str] = []
 
+    # Redis配置
+    REDIS_URL: str = Field(
+        default="redis://localhost:6379/0",
+        env="REDIS_URL",
+        description="Redis连接URL，用于缓存和会话存储"
+    )
+
+    REDIS_ENABLED: bool = Field(
+        default=True,
+        env="REDIS_ENABLED",
+        description="是否启用Redis缓存"
+    )
+
     # 智谱 AI API 配置
     default_api_key: str = Field(
         default="",
