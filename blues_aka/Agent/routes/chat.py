@@ -26,7 +26,7 @@ Author: Blues AKA Team
 
 import json
 import logging
-
+from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, Response, stream_with_context
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from marshmallow import ValidationError
@@ -38,6 +38,7 @@ from blues_aka.Agent.models.message import Message
 from blues_aka.Agent.schemas import ChatSchema
 from blues_aka.common.exception import BusinessException
 from blues_aka.common.exceptions import Exceptions
+from blues_aka.common.rate_limit import RateLimits
 from blues_aka.common.response import success
 from blues_aka.common.responseapi import handle_api_response
 from blues_aka.core.tools import BASIC_TOOLS
@@ -49,6 +50,7 @@ chat_bp = Blueprint('chat', __name__, url_prefix='/chat')
 @chat_bp.route('/conversations/<int:conversation_id>/chat', methods=['POST'])
 @jwt_required()
 @handle_api_response
+@RateLimits.CHAT  # 60 次/分钟，基于用户限流
 def chat(conversation_id):
     """
     发送消息并获取 AI 回复
@@ -299,7 +301,7 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
         3. 调用 Agent 的 streaming 方法生成响应
         4. 对每个生成的 token，发送 'token' 事件给客户端
         5. 将完整的响应内容保存到数据库
-        6. 更新对话统计信息（消息数量、最后消息时间）
+        6. 异步更新对话统计信息（消息数量、最后消息时间）
         7. 发送 'end' 事件，包含最终的消息 ID 和 token 数量
         8. 如果发生错误，发送 'error' 事件并回滚数据库事务
 
@@ -331,8 +333,15 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
     注意事项:
         - 使用 db.session.flush() 而不是 commit() 来获取 message_id
         - 在流式生成过程中不提交事务，避免性能问题
+        - 对话统计信息通过后台线程异步更新，不阻塞流式响应
+        - 统计更新失败不影响主流程，只记录日志
         - 错误处理中包含数据库回滚逻辑
         - 所有数据库操作都有独立的异常处理
+
+    性能优化:
+        - 使用 ThreadPoolExecutor 在后台线程中更新统计信息
+        - 避免在生成器中进行数据库查询和更新操作
+        - 统计更新失败不会影响用户体验
     """
     ai_message = None
     message_id = None
@@ -403,19 +412,27 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
 
             logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
 
-            # 更新对话统计 - 使用延迟提交,避免在流式响应中操作数据库
-            # 注意: 这里不立即 commit,让 Flask 请求结束时自动提交
+            # 异步更新对话统计信息
+            # 使用线程池在后台执行统计更新，避免在生成器中进行数据库操作
             try:
-                conversation = Conversation.query.get(conversation_id)
-                if conversation:
-                    conversation.message_count = Message.query.filter_by(conversation_id=conversation_id).count()
-                    conversation.last_message_at = func.now()
-                    db.session.add(conversation)
-                    # 不在这里 commit,避免在流式响应生成器中进行数据库事务
-                    # 统计信息会在请求结束时自动提交
-            except Exception as db_error:
-                logger.error(f"更新对话统计失败: {str(db_error)}", exc_info=True)
-                db.session.rollback()
+                from blues_aka.tasks.conversation_task import update_conversation_stats_async
+
+                # 创建线程池执行器（如果不存在）
+                if not hasattr(generate_streaming_response, '_executor'):
+                    generate_streaming_response._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="conv_stats_")
+
+                # 提交异步任务，不等待结果
+                generate_streaming_response._executor.submit(
+                    update_conversation_stats_async,
+                    conversation_id
+                )
+                logger.info(f"已提交对话统计更新任务: conversation_id={conversation_id}")
+            except Exception as async_error:
+                # 异步任务提交失败不影响主流程，只记录日志
+                logger.warning(
+                    f"提交对话统计更新任务失败: {str(async_error)}",
+                    exc_info=True
+                )
 
         # 发送结束事件
         yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n"
@@ -434,12 +451,56 @@ def generate_streaming_response_with_thinking(
     """
     生成带推理信息的流式响应
 
+    这是一个生成器函数，用于创建带推理信息的 SSE (Server-Sent Events) 格式流式响应。
+    与普通流式响应不同，此函数会先输出 AI 的推理过程，然后输出最终答案。
+
+    工作流程：
+        1. 创建空的 AI 消息记录并保存到数据库，获取 message_id
+        2. 发送 'start' 事件，通知客户端流式响应开始
+        3. 调用 Agent 的 streaming_with_thinking 方法生成响应
+        4. 对推理过程的每个 token，发送 'reasoning' 事件给客户端
+        5. 推理结束后，发送 'reasoning_end' 事件
+        6. 对最终答案的每个 token，发送 'content' 事件给客户端
+        7. 将完整的响应内容保存到数据库
+        8. 异步更新对话统计信息（消息数量、最后消息时间）
+        9. 发送 'end' 事件，包含最终的消息 ID 和 token 数量
+        10. 如果发生错误，发送 'error' 事件并回滚数据库事务
+
     SSE 事件格式：
-        - start: 开始事件
-        - reasoning: 推理内容事件
-        - content: 最终内容事件
-        - end: 结束事件
-        - error: 错误事件
+        data: {"type": "start", "message_id": 123, "reasoning_enabled": true}
+        data: {"type": "reasoning", "content": "推理过程..."}
+        data: {"type": "reasoning_end", "total_length": 500}
+        data: {"type": "content", "content": "最终答案..."}
+        data: {"type": "end", "message_id": 123, "tokens": 300}
+        data: {"type": "error", "message": "错误信息"}
+
+    Args:
+        agent (BaseAgent): Agent 实例，用于生成 AI 响应
+        content (str): 用户输入的消息内容
+        chat_history (list): 聊天历史记录，包含之前的对话内容
+        conversation_id (int): 对话 ID，用于保存消息和更新统计
+        user_id (int): 用户 ID，用于关联消息归属
+
+    Yields:
+        str: SSE 格式的事件数据，每个事件都以 "data: {...}\\n\\n" 结尾
+
+    异常处理:
+        - 捕获流式生成过程中的所有异常
+        - 错误发生时，将 AI 消息内容更新为错误信息
+        - 通过 SSE 'error' 事件将错误信息发送给客户端
+        - 自动回滚数据库事务
+
+    注意事项:
+        - 推理过程和最终答案都会实时推送给客户端
+        - 对话统计信息通过后台线程异步更新，不阻塞流式响应
+        - 统计更新失败不影响主流程，只记录日志
+        - 使用 db.session.flush() 获取 message_id，避免过早提交事务
+        - 推理完成后会发送 reasoning_end 事件
+
+    性能优化:
+        - 使用 ThreadPoolExecutor 在后台线程中更新统计信息
+        - 避免在生成器中进行数据库查询和更新操作
+        - 统计更新失败不会影响用户体验
     """
     ai_message = None
     message_id = None
@@ -497,18 +558,30 @@ def generate_streaming_response_with_thinking(
         db.session.add(ai_message)
         db.session.commit()
 
+        # 异步更新对话统计信息
+        # 使用线程池在后台执行统计更新，避免在生成器中进行数据库操作
         try:
-            conversion = Conversation.query.get(conversation_id)
+            from blues_aka.tasks.conversation_task import update_conversation_stats_async
 
-            if conversion:
-                conversion.message_count = Message.query.filter_by(conversation_id=conversation_id).count()
-                conversion.last_message_at = func.now()
-                db.session.add(conversion)
-                db.session.commit()
+            # 创建线程池执行器（如果不存在）
+            if not hasattr(generate_streaming_response_with_thinking, '_executor'):
+                generate_streaming_response_with_thinking._executor = ThreadPoolExecutor(
+                    max_workers=2,
+                    thread_name_prefix="conv_stats_"
+                )
 
-        except Exception as db_error:
-            logger.error(f"更新对话统计失败: {str(db_error)}", exc_info=True)
-            db.session.rollback()
+            # 提交异步任务，不等待结果
+            generate_streaming_response_with_thinking._executor.submit(
+                update_conversation_stats_async,
+                conversation_id
+            )
+            logger.info(f"已提交对话统计更新任务: conversation_id={conversation_id}")
+        except Exception as async_error:
+            # 异步任务提交失败不影响主流程，只记录日志
+            logger.warning(
+                f"提交对话统计更新任务失败: {str(async_error)}",
+                exc_info=True
+            )
 
         yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n"
 
