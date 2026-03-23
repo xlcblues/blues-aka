@@ -505,6 +505,7 @@ def delete_conversation(conversation_id):
             raise Exceptions.Conversation.conversation_not_found()
 
         conversation.delete_soft()
+        db.session.commit()
         return success(message="删除成功！")
 
     except Exception as e:
@@ -577,6 +578,7 @@ def archive_conversation(conversation_id):
             raise Exceptions.Conversation.conversation_not_found()
 
         conversation.archive()
+        db.session.commit()
         return success(message="归档成功！")
 
     except Exception as e:

@@ -147,6 +147,9 @@ def chat(conversation_id):
         db.session.add(user_message)
         db.session.commit()
 
+        # 清除历史缓存(因为添加了新消息)
+        Message.invalidate_history_cache(conversation_id)
+
         # 获取智能体配置
         agent_config = {}
         tools_to_use = BASIC_TOOLS.copy()
@@ -278,7 +281,11 @@ def chat(conversation_id):
             db.session.add(ai_message)
             db.session.commit()
 
+            # 清除历史缓存(因为添加了新消息)
+            Message.invalidate_history_cache(conversation_id)
+
             conversation.update_message_stats()
+            db.session.commit()
 
             result = {
                 'message': ai_message.to_dict(),
@@ -416,6 +423,9 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
             db.session.commit()
 
             logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
+
+            # 清除历史缓存(因为添加了新消息)
+            Message.invalidate_history_cache(conversation_id)
 
             # 异步更新对话统计信息
             # 使用线程池在后台执行统计更新，避免在生成器中进行数据库操作
@@ -562,6 +572,9 @@ def generate_streaming_response_with_thinking(
         ai_message.content = final_content
         db.session.add(ai_message)
         db.session.commit()
+
+        # 清除历史缓存(因为添加了新消息)
+        Message.invalidate_history_cache(conversation_id)
 
         # 异步更新对话统计信息
         # 使用线程池在后台执行统计更新，避免在生成器中进行数据库操作
@@ -911,6 +924,7 @@ def regenerate_message(conversation_id):
             db.session.commit()
 
             conversation.update_message_stats()
+            db.session.commit()
 
             return success(data={
                 'message': ai_message.to_dict(),
