@@ -153,27 +153,32 @@ def chat(conversation_id):
 
         if conversation.agent:
             logger.info(f"使用智能体 - id: {conversation.agent.id}, name: {conversation.agent.name}, model: {conversation.agent.model}")
-            # tools 从数据库读取的是 JSON，如果是 None 或空列表，不传递给 BaseAgent
-            # 让 BaseAgent 使用默认的 BASIC_TOOLS
-            tools_param = None
+
+            # 动态加载工具配置
             if conversation.agent.tools:
-                # 如果 agent 配置了自定义工具，这里需要处理
-                # 目前暂时忽略数据库中的 tools 配置，使用默认工具
-                # TODO: 未来可以根据 conversation.agent.tools 中的工具名称动态加载对应的工具
-                pass
+                try:
+                    from blues_aka.core.tools import get_tools_by_names
+                    # agent.tools 是 JSON，存储工具名称列表，如 ['get_current_time', 'web_search']
+                    custom_tools = get_tools_by_names(conversation.agent.tools)
+                    # 使用自定义工具替换基础工具
+                    tools_to_use = custom_tools
+                    logger.info(f"已加载自定义工具: {conversation.agent.tools}")
+                except ValueError as e:
+                    # 工具配置有误，使用默认工具并记录警告
+                    logger.warning(f"工具配置无效，使用默认工具: {str(e)}")
+                    tools_to_use = BASIC_TOOLS.copy()
 
             agent_config = {
                 'model': conversation.agent.model,
                 'system_prompt': conversation.agent.system_prompt,
                 'enable_thinking': show_reasoning
-                # 不传递 tools，让 BaseAgent 使用默认工具
-                # 注意：temperature 和 max_tokens 应该在模型层面配置，不传给 BaseAgent
             }
 
             if enable_web_search is None:
                 enable_web_search = getattr(conversation, 'enable_web_search', False)
 
-            if enable_web_search:
+            # 如果启用了联网搜索但工具列表中还没有，添加它
+            if enable_web_search and 'web_search' not in (conversation.agent.tools or []):
                 from blues_aka.core.tools import OPTIONAL_TOOLS
                 if 'web_search' in OPTIONAL_TOOLS:
                     tools_to_use.append(OPTIONAL_TOOLS['web_search'])

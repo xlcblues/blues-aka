@@ -14,6 +14,7 @@ from blues_aka.common.exceptionHandles import register_error_handlers
 from blues_aka.tasks import init_scheduler
 from blues_aka.common.cache import init_cache
 from blues_aka.common.rate_limit import init_rate_limit
+from blues_aka.common.middleware import init_request_logging
 
 def create_app(config_name):
     app = Flask(__name__, static_folder=None)
@@ -26,6 +27,9 @@ def create_app(config_name):
     # 初始化其他扩展
     init_extensions(app)
     init_cache(app)
+
+    # 初始化请求日志中间件（在注册蓝图之前）
+    init_request_logging(app)
 
     # 初始化限流系统（在注册蓝图之前）
     init_rate_limit(app)

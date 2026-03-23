@@ -56,6 +56,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
+from langchain_classic.memory import ConversationTokenBufferMemory
 
 from blues_aka.config.config import ConfigFactory
 from blues_aka.core.prompts import get_prompt_with_tools, get_system_prompt
@@ -139,6 +140,8 @@ class BaseAgent:
             rag_index_name: Optional[str] = None,
             rag_config: Optional[dict] = None,
             enable_thinking: bool = False,
+            max_token_limit: int = 2000,
+            enable_memory: bool = False,
             **kwargs: Any):
         """
         初始化智能体实例
@@ -172,6 +175,14 @@ class BaseAgent:
                 - k: 检索的文档数量
                 - score_threshold: 相似度阈值
                 - 其他检索参数
+            max_token_limit: 记忆组件的 token 限制
+                - 默认 2000，用于限制对话历史的 token 数量
+                - 超过此限制时会自动截断早期对话
+                - 仅在 enable_memory=True 时有效
+            enable_memory: 是否启用记忆组件
+                - 默认 False，禁用以避免性能问题
+                - 启用后会使用 ConversationTokenBufferMemory 管理对话历史
+                - 注意: 每次创建新 Agent 实例时记忆会重置
             **kwargs: 传递给 create_agent 的额外参数
 
         Raises:
@@ -282,6 +293,22 @@ class BaseAgent:
 
         self.debug = debug
         self.enable_thinking = enable_thinking
+        self.max_token_limit = max_token_limit
+        self.enable_memory = enable_memory
+
+        # 初始化记忆组件 - 使用 LangChain 的 ConversationTokenBufferMemory
+        # 注意: 默认禁用,因为每次创建新 Agent 实例时记忆会重置
+        # 只有在需要长期保持状态的场景下才启用
+        if enable_memory:
+            self.memory = ConversationTokenBufferMemory(
+                max_token_limit=max_token_limit,  # 限制记忆的 token 数量
+                return_messages=True,  # 返回消息对象而非字符串，保持格式一致性
+                llm=self.model  # 传递模型用于准确计算 token 数量
+            )
+            logger.info(f"记忆组件已初始化，max_token_limit={max_token_limit}")
+        else:
+            self.memory = None
+            logger.info("记忆组件未启用(默认)")
 
         try:
             # 创建Agent
@@ -360,9 +387,31 @@ class BaseAgent:
         try:
             messages = []
 
-            if chat_history:
-                messages.extend(chat_history)
+            # 只有启用记忆组件时才使用
+            if self.enable_memory and self.memory:
+                # 方案1: 如果提供了 chat_history，先将其添加到记忆组件
+                if chat_history:
+                    # 将传入的历史记录添加到记忆中
+                    for msg in chat_history:
+                        if isinstance(msg, HumanMessage):
+                            self.memory.chat_memory.add_user_message(msg.content)
+                        elif isinstance(msg, AIMessage):
+                            self.memory.chat_memory.add_ai_message(msg.content)
 
+                # 从记忆组件加载智能截断后的历史记录
+                # 这样可以控制传递给模型的 token 数量，避免成本随对话长度线性增长
+                memory_variables = self.memory.load_memory_variables({})
+                memory_history = memory_variables.get("history", [])
+
+                # 将记忆中的历史添加到消息列表
+                if memory_history:
+                    messages.extend(memory_history)
+            else:
+                # 如果未启用记忆组件，直接使用传入的 chat_history
+                if chat_history:
+                    messages.extend(chat_history)
+
+            # 添加当前用户输入
             messages.append(HumanMessage(content=input_text))
 
             graph_input = {"messages": messages}
@@ -376,6 +425,16 @@ class BaseAgent:
                 if isinstance(msg, AIMessage):
                     ai_response = msg.content
                     break
+
+            # 只有启用记忆组件时才保存
+            if self.enable_memory and self.memory:
+                # 将当前交互保存到记忆组件
+                # 这样可以在下次调用时自动使用，而无需手动传递完整历史
+                self.memory.save_context(
+                    {"input": input_text},
+                    {"output": ai_response}
+                )
+                logger.debug(f"记忆中的消息数: {len(self.memory.chat_memory.messages)}")
 
             logger.info(f"Agent 调用完成，输出长度: {len(ai_response)} 字符")
             logger.debug(f"输出: {ai_response[:100]}...")
@@ -497,13 +556,35 @@ class BaseAgent:
         try:
             messages = []
 
-            if chat_history:
-                messages.extend(chat_history)
+            # 只有启用记忆组件时才使用
+            if self.enable_memory and self.memory:
+                # 如果提供了 chat_history，先将其添加到记忆组件
+                if chat_history:
+                    for msg in chat_history:
+                        if isinstance(msg, HumanMessage):
+                            self.memory.chat_memory.add_user_message(msg.content)
+                        elif isinstance(msg, AIMessage):
+                            self.memory.chat_memory.add_ai_message(msg.content)
+
+                # 从记忆组件加载智能截断后的历史记录
+                memory_variables = self.memory.load_memory_variables({})
+                memory_history = memory_variables.get("history", [])
+
+                # 将记忆中的历史添加到消息列表
+                if memory_history:
+                    messages.extend(memory_history)
+            else:
+                # 如果未启用记忆组件，直接使用传入的 chat_history
+                if chat_history:
+                    messages.extend(chat_history)
 
             messages.append(HumanMessage(content=input_text))
             graph_input = {"messages": messages}
             graph_input.update(kwargs)
             command_input = Command(update=graph_input)
+
+            # 收集完整的 AI 响应用于保存到记忆
+            full_response = ""
 
             for chunk in self.graph.stream(input=command_input, stream_mode=stream_mode):
                 if stream_mode == "messages":
@@ -512,9 +593,11 @@ class BaseAgent:
                         if isinstance(message, AIMessage) and message.content:
                             logger.debug(f"流式输出: {message.content[:50]}...")
                             yield message.content
+                            full_response += message.content
                     elif isinstance(chunk, AIMessage) and chunk.content:
                             logger.debug(f"流式输出: {chunk.content[:50]}...")
                             yield chunk.content
+                            full_response += chunk.content
 
                 elif stream_mode == "updates":
                     if isinstance(chunk, dict) and "message" in chunk:
@@ -523,8 +606,16 @@ class BaseAgent:
                             last_msg = message_update[-1]
                             if isinstance(last_msg, AIMessage) and last_msg.content:
                                 yield last_msg.content
+                                full_response += last_msg.content
 
-                logger.info("Agent 流式调用完成")
+            # 只有启用记忆组件时才保存
+            if self.enable_memory and self.memory and full_response:
+                self.memory.save_context(
+                    {"input": input_text},
+                    {"output": full_response}
+                )
+
+            logger.info("Agent 流式调用完成")
 
         except Exception as e:
             error_msg = f"Agent 流式执行失败: {str(e)}"
@@ -666,8 +757,29 @@ class BaseAgent:
         """
         try:
             messages = []
-            if chat_history:
-                messages.extend(chat_history)
+
+            # 只有启用记忆组件时才使用
+            if self.enable_memory and self.memory:
+                # 如果提供了 chat_history，先将其添加到记忆组件
+                if chat_history:
+                    for msg in chat_history:
+                        if isinstance(msg, HumanMessage):
+                            self.memory.chat_memory.add_user_message(msg.content)
+                        elif isinstance(msg, AIMessage):
+                            self.memory.chat_memory.add_ai_message(msg.content)
+
+                # 从记忆组件加载智能截断后的历史记录
+                memory_variables = self.memory.load_memory_variables({})
+                memory_history = memory_variables.get("history", [])
+
+                # 将记忆中的历史添加到消息列表
+                if memory_history:
+                    messages.extend(memory_history)
+            else:
+                # 如果未启用记忆组件，直接使用传入的 chat_history
+                if chat_history:
+                    messages.extend(chat_history)
+
             messages.append(HumanMessage(content=input_text))
 
             graph_input = {"messages": messages}
@@ -681,6 +793,14 @@ class BaseAgent:
                 if isinstance(msg, AIMessage):
                     ai_response = msg.content
                     break
+
+            # 只有启用记忆组件时才保存
+            if self.enable_memory and self.memory:
+                # 将当前交互保存到记忆组件
+                self.memory.save_context(
+                    {"input": input_text},
+                    {"output": ai_response}
+                )
 
             logger.info("异步调用成功")
             return ai_response
@@ -861,12 +981,36 @@ class BaseAgent:
         """
         try:
             messages = []
-            if chat_history:
-                messages.extend(chat_history)
+
+            # 只有启用记忆组件时才使用
+            if self.enable_memory and self.memory:
+                # 如果提供了 chat_history，先将其添加到记忆组件
+                if chat_history:
+                    for msg in chat_history:
+                        if isinstance(msg, HumanMessage):
+                            self.memory.chat_memory.add_user_message(msg.content)
+                        elif isinstance(msg, AIMessage):
+                            self.memory.chat_memory.add_ai_message(msg.content)
+
+                # 从记忆组件加载智能截断后的历史记录
+                memory_variables = self.memory.load_memory_variables({})
+                memory_history = memory_variables.get("history", [])
+
+                # 将记忆中的历史添加到消息列表
+                if memory_history:
+                    messages.extend(memory_history)
+            else:
+                # 如果未启用记忆组件，直接使用传入的 chat_history
+                if chat_history:
+                    messages.extend(chat_history)
+
             messages.append(HumanMessage(content=input_text))
             graph_input = {"messages": messages}
             graph_input.update(kwargs)
             command_input = Command(update=graph_input)
+
+            # 收集完整的 AI 响应用于保存到记忆
+            full_response = ""
 
             for chunk in self.graph.astream(input=command_input, stream_mode=stream_mode):
                 if stream_mode == "messages":
@@ -874,8 +1018,10 @@ class BaseAgent:
                         message, metadata = chunk
                         if isinstance(message, AIMessage) and message.content:
                             yield message.content
+                            full_response += message.content
                     elif isinstance(chunk, AIMessage) and chunk.content:
                         yield chunk.content
+                        full_response += chunk.content
                 elif stream_mode == "updates":
                     if isinstance(chunk, dict) and "message" in chunk:
                         message_update = chunk["message"]
@@ -883,6 +1029,14 @@ class BaseAgent:
                             last_msg = message_update[-1]
                             if isinstance(last_msg, AIMessage) and last_msg.content:
                                 yield last_msg.content
+                                full_response += last_msg.content
+
+            # 只有启用记忆组件时才保存
+            if self.enable_memory and self.memory and full_response:
+                self.memory.save_context(
+                    {"input": input_text},
+                    {"output": full_response}
+                )
 
             logger.info("Agent 异步流式调用完成")
 
@@ -1091,14 +1245,36 @@ class BaseAgent:
         try:
             messages = []
 
-            if chat_history:
-                messages.extend(chat_history)
+            # 只有启用记忆组件时才使用
+            if self.enable_memory and self.memory:
+                # 如果提供了 chat_history，先将其添加到记忆组件
+                if chat_history:
+                    for msg in chat_history:
+                        if isinstance(msg, HumanMessage):
+                            self.memory.chat_memory.add_user_message(msg.content)
+                        elif isinstance(msg, AIMessage):
+                            self.memory.chat_memory.add_ai_message(msg.content)
+
+                # 从记忆组件加载智能截断后的历史记录
+                memory_variables = self.memory.load_memory_variables({})
+                memory_history = memory_variables.get("history", [])
+
+                # 将记忆中的历史添加到消息列表
+                if memory_history:
+                    messages.extend(memory_history)
+            else:
+                # 如果未启用记忆组件，直接使用传入的 chat_history
+                if chat_history:
+                    messages.extend(chat_history)
 
             messages.append(HumanMessage(content=input_text))
 
             graph_input = {"messages": messages}
             graph_input.update(kwargs)
             command_input = Command(update=graph_input)
+
+            # 收集完整响应用于保存到记忆
+            full_response = ""
 
             for chunk in self.graph.stream(
                     input=command_input,
@@ -1109,8 +1285,23 @@ class BaseAgent:
                     message, metadata_t = chunk
                     if isinstance(message, AIMessage):
                         yield from self._yield_message_content(message)
+                        # 收集最终内容到完整响应
+                        if hasattr(message, 'content') and message.content:
+                            if not (self.enable_thinking and hasattr(message, 'reasoning_content')):
+                                full_response += message.content
                 elif isinstance(chunk, AIMessage):
                     yield from self._yield_message_content(chunk)
+                    # 收集最终内容到完整响应
+                    if hasattr(chunk, 'content') and chunk.content:
+                        if not (self.enable_thinking and hasattr(chunk, 'reasoning_content')):
+                            full_response += chunk.content
+
+            # 只有启用记忆组件时才保存
+            if self.enable_memory and self.memory and full_response:
+                self.memory.save_context(
+                    {"input": input_text},
+                    {"output": full_response}
+                )
 
             logger.info("Agent 流式调用完成")
 
