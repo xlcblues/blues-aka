@@ -57,6 +57,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
 from langchain_classic.memory import ConversationTokenBufferMemory
+from langgraph.checkpoint.memory import MemorySaver
 
 from blues_aka.config.config import ConfigFactory
 from blues_aka.core.prompts import get_prompt_with_tools, get_system_prompt
@@ -67,6 +68,14 @@ from blues_aka.rag.index_manager import IndexManager
 from blues_aka.rag.retrievers import create_retriever, create_retriever_tool
 
 logger = logging.getLogger(__name__)
+
+# SqliteSaver 需要单独安装，可选导入
+try:
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    SQLITE_SAVER_AVAILABLE = True
+except ImportError:
+    SQLITE_SAVER_AVAILABLE = False
+    logger.warning("SqliteSaver 不可用，如需使用 SQLite 持久化，请安装: pip install langgraph-checkpoint-sqlite")
 
 # 获取配置实例
 _config = ConfigFactory.get_config()
@@ -142,6 +151,8 @@ class BaseAgent:
             enable_thinking: bool = False,
             max_token_limit: int = 2000,
             enable_memory: bool = False,
+            enable_checkpointing: bool = False,
+            checkpoint_db_path: Optional[str] = None,
             **kwargs: Any):
         """
         初始化智能体实例
@@ -183,6 +194,15 @@ class BaseAgent:
                 - 默认 False，禁用以避免性能问题
                 - 启用后会使用 ConversationTokenBufferMemory 管理对话历史
                 - 注意: 每次创建新 Agent 实例时记忆会重置
+            enable_checkpointing: 是否启用 Checkpointing 状态持久化
+                - 默认 False，禁用以避免额外的存储开销
+                - 启用后会使用 LangGraph 的 Checkpointing 功能持久化会话状态
+                - 支持跨请求的会话状态保持，使用 thread_id 标识会话
+                - 比 enable_memory 更强大，支持状态快照和回滚
+            checkpoint_db_path: Checkpoint 数据库路径
+                - None: 使用内存存储 (MemorySaver)
+                - str: SQLite 数据库路径 (SqliteSaver)
+                - 建议生产环境使用 SQLite 持久化
             **kwargs: 传递给 create_agent 的额外参数
 
         Raises:
@@ -295,6 +315,8 @@ class BaseAgent:
         self.enable_thinking = enable_thinking
         self.max_token_limit = max_token_limit
         self.enable_memory = enable_memory
+        self.enable_checkpointing = enable_checkpointing
+        self.checkpoint_db_path = checkpoint_db_path
 
         # 初始化记忆组件 - 使用 LangChain 的 ConversationTokenBufferMemory
         # 注意: 默认禁用,因为每次创建新 Agent 实例时记忆会重置
@@ -310,17 +332,47 @@ class BaseAgent:
             self.memory = None
             logger.info("记忆组件未启用(默认)")
 
+        # 初始化 Checkpointer - 支持 LangGraph Checkpointing
+        # Checkpointing 提供了更强大的状态持久化能力，支持:
+        # 1. 跨请求的会话状态保持 (使用 thread_id)
+        # 2. 状态快照和回滚
+        # 3. 断点续传
+        # 4. 多会话管理
+        self.checkpointer = None
+        if enable_checkpointing:
+            if checkpoint_db_path:
+                # 使用 SQLite 持久化存储（推荐生产环境）
+                if SQLITE_SAVER_AVAILABLE:
+                    try:
+                        self.checkpointer = SqliteSaver.from_conn_string(checkpoint_db_path)
+                        logger.info(f"Checkpointing 已启用（SQLite）: {checkpoint_db_path}")
+                    except Exception as e:
+                        logger.warning(f"SQLite Checkpointer 初始化失败: {e}，回退到内存存储")
+                        self.checkpointer = MemorySaver()
+                        logger.info("Checkpointing 已启用（内存存储）")
+                else:
+                    logger.warning("SqliteSaver 不可用，使用内存存储。建议安装: pip install langgraph-checkpoint-sqlite")
+                    self.checkpointer = MemorySaver()
+                    logger.info("Checkpointing 已启用（内存存储）")
+            else:
+                # 使用内存存储（适合开发环境）
+                self.checkpointer = MemorySaver()
+                logger.info("Checkpointing 已启用（内存存储）")
+        else:
+            logger.info("Checkpointing 未启用(默认)")
+
         try:
-            # 创建Agent
+            # 创建Agent，传入 checkpointer
             self.graph = create_agent(
                 model=self.model,
                 tools=self.tools if self.tools else None,
                 system_prompt=self.system_prompt,
                 debug=self.debug,
+                checkpointer=self.checkpointer,  # 添加 checkpointer
                 **kwargs,
             )
             logger.info("Agent 创建成功（CompiledStateGraph）")
-            logger.debug(f"配置: debug={self.debug}, tools={len(self.tools)}")
+            logger.debug(f"配置: debug={self.debug}, tools={len(self.tools)}, checkpointing={enable_checkpointing}")
         except Exception as e:
             logger.error(e)
             raise e
@@ -330,6 +382,7 @@ class BaseAgent:
         self,
         input_text: str,
         chat_history: Optional[List[BaseMessage]] = None,
+        thread_id: Optional[str] = None,
         **kwargs: Any) -> str:
         """
         同步调用智能体
@@ -342,6 +395,13 @@ class BaseAgent:
             chat_history (Optional[List[BaseMessage]]): 聊天历史记录
                 - None: 不使用历史记录
                 - List[BaseMessage]: 包含 HumanMessage 和 AIMessage 的列表
+                - 注意: 如果启用了 checkpointing 并提供 thread_id，chat_history 会被忽略
+                        因为状态会从 checkpointer 中自动加载
+            thread_id (Optional[str]): 会话线程ID
+                - 用于标识和持久化会话状态
+                - 当启用 checkpointing 时，相同的 thread_id 会自动恢复之前的会话状态
+                - 格式建议: "conv_{conversation_id}" 或 "user_{user_id}_{timestamp}"
+                - 如果为 None，则不使用持久化状态
             **kwargs: 传递给 Agent 的额外参数
 
         Returns:
@@ -387,29 +447,37 @@ class BaseAgent:
         try:
             messages = []
 
-            # 只有启用记忆组件时才使用
-            if self.enable_memory and self.memory:
-                # 方案1: 如果提供了 chat_history，先将其添加到记忆组件
-                if chat_history:
-                    # 将传入的历史记录添加到记忆中
-                    for msg in chat_history:
-                        if isinstance(msg, HumanMessage):
-                            self.memory.chat_memory.add_user_message(msg.content)
-                        elif isinstance(msg, AIMessage):
-                            self.memory.chat_memory.add_ai_message(msg.content)
-
-                # 从记忆组件加载智能截断后的历史记录
-                # 这样可以控制传递给模型的 token 数量，避免成本随对话长度线性增长
-                memory_variables = self.memory.load_memory_variables({})
-                memory_history = memory_variables.get("history", [])
-
-                # 将记忆中的历史添加到消息列表
-                if memory_history:
-                    messages.extend(memory_history)
+            # 如果启用了 checkpointing 并提供了 thread_id，使用 checkpointer 的状态
+            # 否则，使用传统的 chat_history 或 memory 方式
+            config = None
+            if self.enable_checkpointing and thread_id:
+                config = {"configurable": {"thread_id": thread_id}}
+                logger.debug(f"使用 Checkpointing 状态管理: thread_id={thread_id}")
+                # 不需要手动添加 chat_history，checkpointer 会自动加载历史状态
             else:
-                # 如果未启用记忆组件，直接使用传入的 chat_history
-                if chat_history:
-                    messages.extend(chat_history)
+                # 只有启用记忆组件时才使用
+                if self.enable_memory and self.memory:
+                    # 方案1: 如果提供了 chat_history，先将其添加到记忆组件
+                    if chat_history:
+                        # 将传入的历史记录添加到记忆中
+                        for msg in chat_history:
+                            if isinstance(msg, HumanMessage):
+                                self.memory.chat_memory.add_user_message(msg.content)
+                            elif isinstance(msg, AIMessage):
+                                self.memory.chat_memory.add_ai_message(msg.content)
+
+                    # 从记忆组件加载智能截断后的历史记录
+                    # 这样可以控制传递给模型的 token 数量，避免成本随对话长度线性增长
+                    memory_variables = self.memory.load_memory_variables({})
+                    memory_history = memory_variables.get("history", [])
+
+                    # 将记忆中的历史添加到消息列表
+                    if memory_history:
+                        messages.extend(memory_history)
+                else:
+                    # 如果未启用记忆组件，直接使用传入的 chat_history
+                    if chat_history:
+                        messages.extend(chat_history)
 
             # 添加当前用户输入
             messages.append(HumanMessage(content=input_text))
@@ -417,7 +485,8 @@ class BaseAgent:
             graph_input = {"messages": messages}
             graph_input.update(kwargs)
 
-            result = self.graph.invoke(graph_input)
+            # 调用 graph，传入 config (如果使用了 checkpointing)
+            result = self.graph.invoke(graph_input, config=config)
             output_messages = result.get("messages", [])
 
             ai_response = ""
@@ -426,15 +495,16 @@ class BaseAgent:
                     ai_response = msg.content
                     break
 
-            # 只有启用记忆组件时才保存
-            if self.enable_memory and self.memory:
-                # 将当前交互保存到记忆组件
-                # 这样可以在下次调用时自动使用，而无需手动传递完整历史
-                self.memory.save_context(
-                    {"input": input_text},
-                    {"output": ai_response}
-                )
-                logger.debug(f"记忆中的消息数: {len(self.memory.chat_memory.messages)}")
+            # 如果未使用 checkpointing，手动保存到记忆组件
+            if not (self.enable_checkpointing and thread_id):
+                if self.enable_memory and self.memory:
+                    # 将当前交互保存到记忆组件
+                    # 这样可以在下次调用时自动使用，而无需手动传递完整历史
+                    self.memory.save_context(
+                        {"input": input_text},
+                        {"output": ai_response}
+                    )
+                    logger.debug(f"记忆中的消息数: {len(self.memory.chat_memory.messages)}")
 
             logger.info(f"Agent 调用完成，输出长度: {len(ai_response)} 字符")
             logger.debug(f"输出: {ai_response[:100]}...")
@@ -452,6 +522,7 @@ class BaseAgent:
             self,
             input_text: str,
             chat_history: Optional[List[BaseMessage]] = None,
+            thread_id: Optional[str] = None,
             stream_mode: Union[
                 Literal["values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"],
                 Sequence[Literal["values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"]]
@@ -469,6 +540,11 @@ class BaseAgent:
             chat_history (Optional[List[BaseMessage]]): 聊天历史记录
                 - None: 不使用历史记录
                 - List[BaseMessage]: 包含 HumanMessage 和 AIMessage 的列表
+                - 注意: 如果启用了 checkpointing 并提供 thread_id，chat_history 会被忽略
+            thread_id (Optional[str]): 会话线程ID
+                - 用于标识和持久化会话状态
+                - 当启用 checkpointing 时，相同的 thread_id 会自动恢复之前的会话状态
+                - 格式建议: "conv_{conversation_id}" 或 "user_{user_id}_{timestamp}"
             stream_mode (Union[str, Sequence[str]]): 流式输出模式
                 - "messages": 按消息流式输出（默认，推荐）
                 - "updates": 按更新流式输出
@@ -556,27 +632,33 @@ class BaseAgent:
         try:
             messages = []
 
-            # 只有启用记忆组件时才使用
-            if self.enable_memory and self.memory:
-                # 如果提供了 chat_history，先将其添加到记忆组件
-                if chat_history:
-                    for msg in chat_history:
-                        if isinstance(msg, HumanMessage):
-                            self.memory.chat_memory.add_user_message(msg.content)
-                        elif isinstance(msg, AIMessage):
-                            self.memory.chat_memory.add_ai_message(msg.content)
-
-                # 从记忆组件加载智能截断后的历史记录
-                memory_variables = self.memory.load_memory_variables({})
-                memory_history = memory_variables.get("history", [])
-
-                # 将记忆中的历史添加到消息列表
-                if memory_history:
-                    messages.extend(memory_history)
+            # 如果启用了 checkpointing 并提供了 thread_id，使用 checkpointer 的状态
+            config = None
+            if self.enable_checkpointing and thread_id:
+                config = {"configurable": {"thread_id": thread_id}}
+                logger.debug(f"使用 Checkpointing 状态管理: thread_id={thread_id}")
             else:
-                # 如果未启用记忆组件，直接使用传入的 chat_history
-                if chat_history:
-                    messages.extend(chat_history)
+                # 只有启用记忆组件时才使用
+                if self.enable_memory and self.memory:
+                    # 如果提供了 chat_history，先将其添加到记忆组件
+                    if chat_history:
+                        for msg in chat_history:
+                            if isinstance(msg, HumanMessage):
+                                self.memory.chat_memory.add_user_message(msg.content)
+                            elif isinstance(msg, AIMessage):
+                                self.memory.chat_memory.add_ai_message(msg.content)
+
+                    # 从记忆组件加载智能截断后的历史记录
+                    memory_variables = self.memory.load_memory_variables({})
+                    memory_history = memory_variables.get("history", [])
+
+                    # 将记忆中的历史添加到消息列表
+                    if memory_history:
+                        messages.extend(memory_history)
+                else:
+                    # 如果未启用记忆组件，直接使用传入的 chat_history
+                    if chat_history:
+                        messages.extend(chat_history)
 
             messages.append(HumanMessage(content=input_text))
             graph_input = {"messages": messages}
@@ -586,7 +668,7 @@ class BaseAgent:
             # 收集完整的 AI 响应用于保存到记忆
             full_response = ""
 
-            for chunk in self.graph.stream(input=command_input, stream_mode=stream_mode):
+            for chunk in self.graph.stream(input=command_input, stream_mode=stream_mode, config=config):
                 if stream_mode == "messages":
                     if isinstance(chunk, tuple) and len(chunk) == 2:
                         message, metadata = chunk
@@ -608,12 +690,13 @@ class BaseAgent:
                                 yield last_msg.content
                                 full_response += last_msg.content
 
-            # 只有启用记忆组件时才保存
-            if self.enable_memory and self.memory and full_response:
-                self.memory.save_context(
-                    {"input": input_text},
-                    {"output": full_response}
-                )
+            # 如果未使用 checkpointing，手动保存到记忆组件
+            if not (self.enable_checkpointing and thread_id):
+                if self.enable_memory and self.memory and full_response:
+                    self.memory.save_context(
+                        {"input": input_text},
+                        {"output": full_response}
+                    )
 
             logger.info("Agent 流式调用完成")
 
@@ -1217,6 +1300,7 @@ class BaseAgent:
             self,
             input_text: str,
             chat_history: Optional[List[BaseMessage]] = None,
+            thread_id: Optional[str] = None,
             **kwargs: Any
     ) -> Iterator[Dict[str, Any]]:
         """
@@ -1227,6 +1311,10 @@ class BaseAgent:
         Args:
             input_text: 用户输入
             chat_history: 聊天历史
+                - 注意: 如果启用了 checkpointing 并提供 thread_id，chat_history 会被忽略
+            thread_id: 会话线程ID
+                - 用于标识和持久化会话状态
+                - 当启用 checkpointing 时，相同的 thread_id 会自动恢复之前的会话状态
             **kwargs: 额外参数
 
         Yields:
@@ -1245,27 +1333,33 @@ class BaseAgent:
         try:
             messages = []
 
-            # 只有启用记忆组件时才使用
-            if self.enable_memory and self.memory:
-                # 如果提供了 chat_history，先将其添加到记忆组件
-                if chat_history:
-                    for msg in chat_history:
-                        if isinstance(msg, HumanMessage):
-                            self.memory.chat_memory.add_user_message(msg.content)
-                        elif isinstance(msg, AIMessage):
-                            self.memory.chat_memory.add_ai_message(msg.content)
-
-                # 从记忆组件加载智能截断后的历史记录
-                memory_variables = self.memory.load_memory_variables({})
-                memory_history = memory_variables.get("history", [])
-
-                # 将记忆中的历史添加到消息列表
-                if memory_history:
-                    messages.extend(memory_history)
+            # 如果启用了 checkpointing 并提供了 thread_id，使用 checkpointer 的状态
+            config = None
+            if self.enable_checkpointing and thread_id:
+                config = {"configurable": {"thread_id": thread_id}}
+                logger.debug(f"使用 Checkpointing 状态管理: thread_id={thread_id}")
             else:
-                # 如果未启用记忆组件，直接使用传入的 chat_history
-                if chat_history:
-                    messages.extend(chat_history)
+                # 只有启用记忆组件时才使用
+                if self.enable_memory and self.memory:
+                    # 如果提供了 chat_history，先将其添加到记忆组件
+                    if chat_history:
+                        for msg in chat_history:
+                            if isinstance(msg, HumanMessage):
+                                self.memory.chat_memory.add_user_message(msg.content)
+                            elif isinstance(msg, AIMessage):
+                                self.memory.chat_memory.add_ai_message(msg.content)
+
+                    # 从记忆组件加载智能截断后的历史记录
+                    memory_variables = self.memory.load_memory_variables({})
+                    memory_history = memory_variables.get("history", [])
+
+                    # 将记忆中的历史添加到消息列表
+                    if memory_history:
+                        messages.extend(memory_history)
+                else:
+                    # 如果未启用记忆组件，直接使用传入的 chat_history
+                    if chat_history:
+                        messages.extend(chat_history)
 
             messages.append(HumanMessage(content=input_text))
 
@@ -1279,6 +1373,7 @@ class BaseAgent:
             for chunk in self.graph.stream(
                     input=command_input,
                     stream_mode="messages",
+                    config=config,
             ):
                 logger.info(chunk)
                 if isinstance(chunk, tuple) and len(chunk) == 2:
@@ -1296,12 +1391,13 @@ class BaseAgent:
                         if not (self.enable_thinking and hasattr(chunk, 'reasoning_content')):
                             full_response += chunk.content
 
-            # 只有启用记忆组件时才保存
-            if self.enable_memory and self.memory and full_response:
-                self.memory.save_context(
-                    {"input": input_text},
-                    {"output": full_response}
-                )
+            # 如果未使用 checkpointing，手动保存到记忆组件
+            if not (self.enable_checkpointing and thread_id):
+                if self.enable_memory and self.memory and full_response:
+                    self.memory.save_context(
+                        {"input": input_text},
+                        {"output": full_response}
+                    )
 
             logger.info("Agent 流式调用完成")
 
@@ -1360,6 +1456,126 @@ class BaseAgent:
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
         return datetime.now().isoformat()
+
+    def get_state(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取指定 thread_id 的当前状态
+
+        当启用 Checkpointing 时，可以查询指定会话的当前状态。
+        这对于调试、监控和恢复会话非常有用。
+
+        Args:
+            thread_id (str): 会话线程ID
+                - 用于标识会话
+                - 格式建议: "conv_{conversation_id}" 或 "user_{user_id}_{timestamp}"
+
+        Returns:
+            Optional[Dict[str, Any]]: 当前状态字典，包含:
+                - values: 当前状态值（包含 messages 等）
+                - next: 下一步要执行的操作
+                - config: 配置信息
+                - metadata: 元数据
+                如果未启用 Checkpointing 或 thread_id 不存在，返回 None
+
+        Raises:
+            无异常抛出，出错时返回 None 并记录日志
+
+        使用示例：
+            # 获取对话的当前状态
+            agent = BaseAgent(enable_checkpointing=True, checkpoint_db_path="checkpoints.db")
+            state = agent.get_state("conv_123")
+
+            if state:
+                print(f"消息数量: {len(state['values'].get('messages', []))}")
+                print(f"最后一条消息: {state['values']['messages'][-1]}")
+
+        注意事项：
+            - 必须启用 enable_checkpointing 才能使用
+            - 返回的状态包含完整的消息历史
+            - 状态是只读的，不应直接修改
+            - 可以使用 get_state_history() 查看历史状态
+        """
+        if not self.enable_checkpointing or not self.checkpointer:
+            logger.warning("Checkpointing 未启用，无法获取状态")
+            return None
+
+        try:
+            config = {"configurable": {"thread_id": thread_id}}
+            state = self.graph.get_state(config)
+            logger.debug(f"成功获取状态: thread_id={thread_id}")
+            return state
+        except Exception as e:
+            logger.error(f"获取状态失败: thread_id={thread_id}, error={e}")
+            return None
+
+    def get_state_history(self, thread_id: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        获取指定 thread_id 的状态历史
+
+        当启用 Checkpointing 时，可以查询会话的所有历史状态快照。
+        这对于审计、调试和回溯非常有用。
+
+        Args:
+            thread_id (str): 会话线程ID
+                - 用于标识会话
+                - 格式建议: "conv_{conversation_id}" 或 "user_{user_id}_{timestamp}"
+            limit (Optional[int]): 返回的最大状态数量
+                - None: 返回所有历史状态（默认）
+                - int: 只返回最近的 N 个状态
+                - 按时间倒序排列（最新的在前）
+
+        Returns:
+            List[Dict[str, Any]]: 状态历史列表，每个状态包含:
+                - values: 该时间点的状态值
+                - next: 下一步操作
+                - config: 配置信息
+                - metadata: 元数据（包含时间戳等）
+                如果未启用 Checkpointing 或 thread_id 不存在，返回空列表
+
+        Raises:
+            无异常抛出，出错时返回空列表并记录日志
+
+        使用示例：
+            # 获取完整的状态历史
+            agent = BaseAgent(enable_checkpointing=True, checkpoint_db_path="checkpoints.db")
+            history = agent.get_state_history("conv_123")
+
+            for state in history:
+                timestamp = state.get('metadata', {}).get('source', 'unknown')
+                print(f"状态快照: {timestamp}")
+
+            # 只获取最近 10 个状态
+            recent_states = agent.get_state_history("conv_123", limit=10)
+
+        使用场景：
+            - 审计：查看会话的完整历史
+            - 调试：了解状态如何随时间变化
+            - 回溯：找到之前的状态快照
+            - 分析：统计会话的演进模式
+
+        注意事项：
+            - 必须启用 enable_checkpointing 才能使用
+            - 历史状态是只读的
+            - 较长的会话可能产生大量历史状态
+            - 使用 limit 参数限制返回数量以提高性能
+        """
+        if not self.enable_checkpointing or not self.checkpointer:
+            logger.warning("Checkpointing 未启用，无法获取状态历史")
+            return []
+
+        try:
+            config = {"configurable": {"thread_id": thread_id}}
+            state_history = list(self.graph.get_state_history(config))
+
+            # 应用 limit
+            if limit and len(state_history) > limit:
+                state_history = state_history[:limit]
+
+            logger.debug(f"成功获取状态历史: thread_id={thread_id}, count={len(state_history)}")
+            return state_history
+        except Exception as e:
+            logger.error(f"获取状态历史失败: thread_id={thread_id}, error={e}")
+            return []
 
 # 创建智能体
 def create_base_agent(
