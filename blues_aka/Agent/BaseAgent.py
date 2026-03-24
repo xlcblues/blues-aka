@@ -67,6 +67,7 @@ from blues_aka.rag.embeddings import get_embeddings
 from blues_aka.rag.index_manager import IndexManager
 from blues_aka.rag.retrievers import create_retriever, create_retriever_tool
 from blues_aka.Agent.tool_memory import ToolCallMemory, extract_tool_calls_from_messages
+from blues_aka.Agent.tool_cache import ToolCacheManager
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +155,8 @@ class BaseAgent:
             enable_memory: bool = False,
             enable_checkpointing: bool = False,
             checkpoint_db_path: Optional[str] = None,
+            enable_tool_cache: bool = False,
+            tool_cache_ttl_minutes: int = 30,
             **kwargs: Any):
         """
         初始化智能体实例
@@ -318,10 +321,27 @@ class BaseAgent:
         self.enable_memory = enable_memory
         self.enable_checkpointing = enable_checkpointing
         self.checkpoint_db_path = checkpoint_db_path
+        self.enable_tool_cache = enable_tool_cache
+        self.tool_cache_ttl_minutes = tool_cache_ttl_minutes
 
         # 初始化工具调用记忆
         self.tool_memory = ToolCallMemory(max_history=50)
         logger.info("工具调用记忆已初始化")
+
+        # 初始化工具调用缓存管理器
+        self.tool_cache_manager = None
+        if enable_tool_cache:
+            try:
+                self.tool_cache_manager = ToolCacheManager(
+                    ttl_minutes=tool_cache_ttl_minutes,
+                    backend="memory"
+                )
+                logger.info(f"工具调用缓存已启用: TTL={tool_cache_ttl_minutes}分钟")
+            except Exception as e:
+                logger.warning(f"工具缓存初始化失败: {e}")
+                self.tool_cache_manager = None
+        else:
+            logger.info("工具调用缓存未启用(默认)")
 
         # 初始化记忆组件 - 使用 LangChain 的 ConversationTokenBufferMemory
         # 注意: 默认禁用,因为每次创建新 Agent 实例时记忆会重置
@@ -1551,6 +1571,32 @@ class BaseAgent:
             List[Dict[str, Any]]: 工具调用记录列表
         """
         return self.tool_memory.get_history(limit)
+
+    def get_tool_cache_stats(self) -> Optional[Dict[str, Any]]:
+        """
+        获取工具缓存统计信息
+
+        Returns:
+            Optional[Dict[str, Any]]: 缓存统计信息
+                - total_calls: 总调用次数
+                - hits: 缓存命中次数
+                - misses: 缓存未命中次数
+                - hit_rate: 命中率（0-1）
+                - cache_size: 当前缓存大小
+                - backend: 缓存后端类型
+            如果未启用缓存，返回 None
+        """
+        if self.tool_cache_manager:
+            return self.tool_cache_manager.get_stats()
+        return None
+
+    def clear_tool_cache(self):
+        """清除工具缓存"""
+        if self.tool_cache_manager:
+            self.tool_cache_manager.clear()
+            logger.info("工具缓存已清除")
+        else:
+            logger.warning("工具缓存未启用")
 
     def get_state(self, thread_id: str) -> Optional[Dict[str, Any]]:
         """
