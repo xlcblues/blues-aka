@@ -54,6 +54,11 @@ class TokenBlacklist:
     def __init__(self):
         """初始化 Token 黑名单管理器"""
         self.cache = get_cache()
+        # 如果缓存不可用，使用内存缓存作为后备
+        if self.cache is None:
+            from blues_aka.common.cache import MemoryCacheBackend, CacheManager
+            logger.warning("缓存系统未初始化，使用内存缓存作为 token 黑名单后端")
+            self.cache = CacheManager(MemoryCacheBackend(), prefix='token_blacklist_fallback')
 
     def _get_token_jti(self, token: Optional[str] = None) -> Optional[str]:
         """

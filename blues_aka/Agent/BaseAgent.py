@@ -247,42 +247,68 @@ class BaseAgent:
                 debug=True
             )
         """
+        logger.info("=" * 80)
+        logger.info("🚀 BaseAgent.__init__ 开始执行")
+        logger.info(f"📥 收到的参数:")
+        logger.info(f"  - model: {model} (type: {type(model).__name__ if model else None})")
+        logger.info(f"  - enable_rag: {enable_rag}")
+        logger.info(f"  - rag_index_name: {rag_index_name}")
+        logger.info(f"  - enable_thinking: {enable_thinking}")
+        logger.info(f"  - tools: {len(tools) if tools else 0} tools")
+        logger.info("=" * 80)
 
         # 初始化模型 - 将字符串转换为模型实例
+        logger.info("🔧 开始初始化模型...")
+
         if model is None:
+            logger.info(f"  模型参数为 None，使用默认模型: {_config.default_model}")
             if enable_thinking:
+                logger.info("  调用 get_chat_model (启用深度思考)...")
                 self.model = get_chat_model(
                     model_name=_config.default_model,
                     thinking_type="enabled"
                 )
-                logger.info(f"使用默认模型（启用深度思考）: {_config.default_model}")
+                logger.info(f"✅ 默认模型创建成功（启用深度思考）: {_config.default_model}")
             else:
+                logger.info("  调用 get_chat_model (不启用深度思考)...")
                 self.model = get_chat_model(model_name=_config.default_model)
-                logger.info(f"使用默认模型: {_config.default_model}")
+                logger.info(f"✅ 默认模型创建成功: {_config.default_model}")
 
         elif isinstance(model, str):
+            logger.info(f"  模型参数为字符串: {model}")
             # 如果是字符串，创建模型实例
             # 检查是否已经有提供商前缀 (如 "zhipuai:glm-4.5")
             if ':' in model:
                 # 有前缀，直接使用
+                logger.info(f"  检测到提供商前缀")
                 if enable_thinking:
+                    logger.info(f"  调用 get_chat_model (启用深度思考)...")
                     self.model = get_chat_model(model_name=model.split(':', 1)[1], thinking_type="enabled")
-                    logger.info(f"使用模型（带前缀）: {model}")
+                    logger.info(f"✅ 模型创建成功（带前缀，启用深度思考）: {model}")
                 else:
+                    logger.info(f"  调用 get_chat_model (不启用深度思考)...")
                     self.model = get_chat_model(model_name=model.split(':', 1)[1], thinking_type="disabled")
+                    logger.info(f"✅ 模型创建成功（带前缀）: {model}")
             else:
                 # 没有前缀，使用模型名称
+                logger.info(f"  无提供商前缀，使用模型名称")
                 if enable_thinking:
+                    logger.info(f"  调用 get_chat_model (启用深度思考)...")
                     self.model = get_chat_model(model_name=model, thinking_type="enabled")
-                    logger.info(f"使用模型: {model}")
+                    logger.info(f"✅ 模型创建成功（启用深度思考）: {model}")
                 else:
+                    logger.info(f"  调用 get_chat_model (不启用深度思考)...")
                     self.model = get_chat_model(model_name=model, thinking_type="disabled")
+                    logger.info(f"✅ 模型创建成功: {model}")
 
         else:
+            logger.info(f"  模型参数为模型实例，直接使用: {type(model).__name__}")
             self.model = model
             self.model = model
             if enable_thinking:
-                logger.warning("传入的是模型实例，无法自动启用深度思考")
+                logger.warning("⚠️ 传入的是模型实例，无法自动启用深度思考")
+
+        logger.info(f"✅ 模型初始化完成: {self.model}")
 
         # 初始化工具
         if tools is None:
@@ -300,13 +326,14 @@ class BaseAgent:
         self.rag_config = rag_config or {}
 
         if enable_rag and rag_index_name:
-            logger.info(f"启用 RAG 模式，索引名称: {rag_index_name}")
+            logger.info(f"🔍 启用 RAG 模式，索引名称: {rag_index_name}")
+            logger.info(f"🔍 RAG 配置: {rag_config}")
             rag_tool = self._create_rag_tool(rag_index_name, rag_config)
             if rag_tool:
                 self.tools.append(rag_tool)
-                logger.info(f"RAG 工具已添加到工具列表: {rag_tool.name}")
+                logger.info(f"✅ RAG 工具已添加到工具列表: {rag_tool.name}")
             else:
-                logger.warning(f"RAG 工具创建失败，将继续使用基础工具")
+                logger.warning(f"⚠️ RAG 工具创建失败，将继续使用基础工具")
 
         # 初始化提示词
         if system_prompt is None:
@@ -399,11 +426,14 @@ class BaseAgent:
 
         try:
             # 创建Agent，传入 checkpointer
+            logger.info("=" * 60)
             logger.info("开始调用 create_agent...")
             logger.info(f"  模型: {self.model}")
             logger.info(f"  工具数量: {len(self.tools) if self.tools else 0}")
             logger.info(f"  系统提示词: {self.system_prompt[:50]}...")
             logger.info(f"  checkpointer: {self.checkpointer}")
+            logger.info(f"  kwargs: {kwargs}")
+            logger.info("=" * 60)
 
             self.graph = create_agent(
                 model=self.model,
@@ -413,10 +443,10 @@ class BaseAgent:
                 checkpointer=self.checkpointer,  # 添加 checkpointer
                 **kwargs,
             )
-            logger.info("Agent 创建成功（CompiledStateGraph）")
+            logger.info("✅ Agent 创建成功（CompiledStateGraph）")
             logger.debug(f"配置: debug={self.debug}, tools={len(self.tools)}, checkpointing={enable_checkpointing}")
         except Exception as e:
-            logger.error(f"create_agent 调用失败: {e}")
+            logger.error(f"❌ create_agent 调用失败: {e}")
             import traceback
             traceback.print_exc()
             raise e
@@ -1373,27 +1403,46 @@ class BaseAgent:
             - create_retriever_tool: 将检索器包装为工具
         """
         try:
-            embeddings = get_embeddings()
-            index_manager = IndexManager()
+            logger.info(f"[RAG] 开始创建 RAG 工具，索引: {index_name}")
+            logger.info(f"[RAG] 配置: {config}")
 
+            logger.info(f"[RAG] 1. 获取 Embeddings 模型...")
+            embeddings = get_embeddings()
+            logger.info(f"[RAG] 2. Embeddings 模型获取成功")
+
+            logger.info(f"[RAG] 3. 创建 IndexManager...")
+            index_manager = IndexManager()
+            logger.info(f"[RAG] 4. IndexManager 创建成功")
+
+            logger.info(f"[RAG] 5. 检查索引是否存在: {index_name}...")
             if not index_manager.index_exists(index_name):
                 logger.error(f"RAG索引不存在: {index_name}")
                 return None
+            logger.info(f"[RAG] 6. 索引存在")
 
+            logger.info(f"[RAG] 7. 加载向量存储...")
             vector_store = index_manager.load_index(index_name, embeddings=embeddings)
+            logger.info(f"[RAG] 8. 向量存储加载成功")
+
             retriever_config = config or {}
+            logger.info(f"[RAG] 9. 创建检索器，配置: {retriever_config}...")
             retriever = create_retriever(vector_store=vector_store, **retriever_config)
+            logger.info(f"[RAG] 10. 检索器创建成功")
+
+            logger.info(f"[RAG] 11. 创建检索工具...")
             tool = create_retriever_tool(
                 retriever=retriever,
                 name="knowledge_base",
                 description="搜索知识库中的相关信息，用于回答基于文档的问题"
             )
+            logger.info(f"[RAG] 12. ✅ RAG工具创建成功: {index_name}")
 
-            logger.info(f"RAG工具创建成功: {index_name}")
             return tool
 
         except Exception as e:
-            logger.error(f"创建RAG工具失败: {e}")
+            logger.error(f"❌ [RAG] 创建RAG工具失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
 
     def streaming_with_thinking(

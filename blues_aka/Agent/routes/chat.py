@@ -219,8 +219,13 @@ def chat(conversation_id):
 
         # 使用AgentManager获取或创建Agent实例
         try:
+            logger.info("📍 [chat.py] 准备调用 get_agent_manager()...")
+            manager = get_agent_manager()
+            logger.info(f"📍 [chat.py] get_agent_manager() 返回成功: {manager}")
+
             # 使用conversation_id作为agent_id，确保同一对话复用Agent
-            agent = get_agent_manager().get_or_create_agent(
+            logger.info(f"📍 [chat.py] 准备调用 get_or_create_agent, agent_id=conv_{conversation_id}...")
+            agent = manager.get_or_create_agent(
                 agent_config=agent_config,
                 agent_id=f"conv_{conversation_id}"
             )

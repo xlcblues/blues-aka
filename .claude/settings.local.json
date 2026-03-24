@@ -17,7 +17,9 @@
       "Bash(else echo \"File not found\")",
       "Bash(fi:*)",
       "Bash(redis-cli ping:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(cd:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

@@ -64,9 +64,9 @@ class AgentManager:
     def __new__(cls):
         """实现单例模式"""
         if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
+            # 注意：这里不再获取锁，因为 get_instance 已经获取了锁
+            # 避免死锁
+            cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -75,10 +75,13 @@ class AgentManager:
 
         注意: 由于单例模式，此方法只会被调用一次
         """
+        logger.info("[__init__] AgentManager.__init__ 开始执行")
         # 防止重复初始化
         if hasattr(self, '_initialized'):
+            logger.info("[__init__] 已经初始化过，直接返回")
             return
 
+        logger.info("[__init__] 开始初始化实例变量...")
         self._agents: Dict[str, tuple[BaseAgent, datetime]] = {}
         self._config_keys: Dict[str, str] = {}  # agent_id -> config_key
         self._creation_count = 0
@@ -86,9 +89,14 @@ class AgentManager:
         self._cache_misses = 0
         self._max_cache_size = 100  # 最大缓存数量
         self._cache_ttl_minutes = 60  # 缓存过期时间（分钟）
-        self._lock = threading.RLock()  # 可重入锁
+        logger.info("[__init__] 实例变量初始化完成")
 
-        logger.info("Agent管理器初始化完成")
+        logger.info("[__init__] 准备创建 RLock...")
+        self._lock = threading.RLock()  # 可重入锁
+        logger.info("[__init__] RLock 创建成功")
+
+        self._initialized = True
+        logger.info("[__init__] ✅ Agent管理器初始化完成")
 
     def get_or_create_agent(
         self,
@@ -136,9 +144,16 @@ class AgentManager:
             ...     'enable_rag': True
             ... })
         """
-        # 生成配置键
-        config_key = self._make_config_key(agent_config)
+        logger.info(f"[AgentManager] get_or_create_agent 被调用")
+        logger.info(f"[AgentManager] agent_id: {agent_id}")
+        logger.info(f"[AgentManager] agent_config keys: {list(agent_config.keys())}")
 
+        # 生成配置键
+        logger.info(f"[AgentManager] 开始生成 config_key...")
+        config_key = self._make_config_key(agent_config)
+        logger.info(f"[AgentManager] config_key 生成成功: {config_key[:8]}...")
+
+        logger.info(f"[AgentManager] 获取锁...")
         with self._lock:
             # 方案1: 如果提供了agent_id，先尝试通过agent_id查找
             if agent_id:
@@ -382,19 +397,30 @@ class AgentManager:
         Returns:
             str: MD5哈希值
         """
+        logger.info(f"[_make_config_key] 开始处理配置...")
         # 深拷贝配置，避免修改原始配置
         config_copy = config.copy()
+        logger.info(f"[_make_config_key] 配置拷贝完成")
 
         # 处理特殊字段
         # 1. tools: 工具列表需要序列化
         if 'tools' in config_copy and config_copy['tools'] is not None:
+            logger.info(f"[_make_config_key] 开始处理 tools 字段...")
             tools = config_copy['tools']
+            logger.info(f"[_make_config_key] tools 类型: {type(tools)}, 数量: {len(tools) if isinstance(tools, list) else 'N/A'}")
+
             if isinstance(tools, list):
                 # 提取工具名称列表
+                logger.info(f"[_make_config_key] 提取工具名称...")
                 tool_names = [getattr(tool, 'name', str(tool)) for tool in tools]
+                logger.info(f"[_make_config_key] 工具名称提取完成: {tool_names}")
                 config_copy['tools'] = sorted(tool_names)
+                logger.info(f"[_make_config_key] 工具名称排序完成")
             else:
                 config_copy['tools'] = str(tools)
+                logger.info(f"[_make_config_key] tools 转字符串完成")
+        else:
+            logger.info(f"[_make_config_key] 没有 tools 字段或为 None")
 
         # 2. model: 模型需要转换为字符串
         if 'model' in config_copy:
@@ -472,10 +498,19 @@ class AgentManager:
         Returns:
             AgentManager: 全局唯一的Agent管理器实例
         """
+        logger.info(f"[get_instance] 被调用, _instance={cls._instance}")
         if cls._instance is None:
+            logger.info("[get_instance] _instance 为 None，准备获取锁...")
             with cls._lock:
+                logger.info("[get_instance] 获取锁成功")
                 if cls._instance is None:
+                    logger.info("[get_instance] 双重检查通过，开始创建实例...")
                     cls._instance = cls()
+                    logger.info("[get_instance] 实例创建完成")
+                else:
+                    logger.info("[get_instance] 双重检查：实例已被其他线程创建")
+        else:
+            logger.info("[get_instance] _instance 已存在，直接返回")
         return cls._instance
 
     @classmethod

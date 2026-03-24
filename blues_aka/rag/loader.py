@@ -85,10 +85,11 @@ def get_loader_for_file(file_path: str) -> Optional[Any]:
         >>>     docs = loader.load()
     """
     file_path = Path(file_path)
-    extension = file_path.suffix.lower()
+    extension = file_path.suffix.lower().strip()  # 清理扩展名：去除尾部空格
 
     if extension not in SUPPORTED_EXTENSIONS:
-        logger.error(f"Unsupported file extension: {file_path}")
+        logger.error(f"Unsupported file extension: {file_path}, extension: '{extension}'")
+        logger.error(f"Supported extensions: {list(SUPPORTED_EXTENSIONS.keys())}")
         return None
 
     file_type = SUPPORTED_EXTENSIONS[extension]
@@ -96,9 +97,9 @@ def get_loader_for_file(file_path: str) -> Optional[Any]:
     try:
         if file_type == "pdf":
             return PyPDFLoader(str(file_path))
-        elif file_type == "txt":
+        elif file_type == "text":
             return TextLoader(str(file_path), encoding="utf-8")
-        elif file_type == "md":
+        elif file_type == "markdown":
             return UnstructuredMarkdownLoader(str(file_path))
         elif file_type == "html":
             return UnstructuredHTMLLoader(str(file_path))
@@ -160,7 +161,7 @@ def load_document(
     loader = get_loader_for_file(file_path)
 
     if loader is None:
-        extension = file_path.suffix.lower()
+        extension = file_path.suffix.lower().strip()  # 清理扩展名
         supported = ", ".join(SUPPORTED_EXTENSIONS.keys())
         raise ValueError(
             f"不支持的文件类型: {extension}。"
@@ -170,13 +171,15 @@ def load_document(
     try:
         documents = loader.load()
         if add_metadata:
+            # 清理扩展名用于元数据
+            clean_extension = file_path.suffix.lower().strip()
             for doc in documents:
                 if doc.metadata is None:
                     doc.metadata = {}
                 doc.metadata.update({
                     "source": str(file_path),
                     "filename": file_path.name,
-                    "file_type": SUPPORTED_EXTENSIONS[file_path.suffix.lower()],
+                    "file_type": SUPPORTED_EXTENSIONS[clean_extension],
                 })
 
         logger.info(f"成功加载 {len(documents)} 个文档块")

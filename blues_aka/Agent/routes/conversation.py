@@ -1010,8 +1010,13 @@ def create_knowledge_base():
 
         # 检查文件扩展名
         # 先从原始文件名提取扩展名（支持中文文件名）
-        original_file_ext = Path(file.filename).suffix.lower()
-        logger.info(f"原始文件扩展名: {original_file_ext}")
+        # 清理文件名：去除首尾空格和换行符
+        cleaned_filename = file.filename.strip() if file.filename else ''
+        original_file_ext = Path(cleaned_filename).suffix.lower()
+        logger.info(f"原始文件名: {repr(file.filename)}")
+        logger.info(f"清理后文件名: {repr(cleaned_filename)}")
+        logger.info(f"原始文件扩展名: {repr(original_file_ext)}")
+        logger.info(f"ALLOWED_EXTENSIONS内容: {ALLOWED_EXTENSIONS}")
 
         # 检查文件扩展名是否为空
         if not original_file_ext:
@@ -1021,6 +1026,9 @@ def create_knowledge_base():
 
         # 检查文件类型是否支持
         file_ext_without_dot = original_file_ext[1:]  # 去掉点号
+        logger.info(f"去掉点号的扩展名: '{file_ext_without_dot}', 类型: {type(file_ext_without_dot)}")
+        logger.info(f"检查 '{file_ext_without_dot}' in {ALLOWED_EXTENSIONS}: {file_ext_without_dot in ALLOWED_EXTENSIONS}")
+
         if file_ext_without_dot not in ALLOWED_EXTENSIONS:
             logger.error(f"不支持的文件类型: {original_file_ext} ({file_ext_without_dot})")
             supported = ", ".join(sorted(ALLOWED_EXTENSIONS))
@@ -1343,8 +1351,9 @@ def add_documents_to_index(index_name):
 
         # 检查文件扩展名
         # 先从原始文件名提取扩展名（支持中文文件名）
-        original_file_ext = Path(file.filename).suffix.lower()
-        logger.info(f"原始文件扩展名: {original_file_ext}")
+        # 清理文件名：去除首尾空格和换行符
+        cleaned_filename = file.filename.strip() if file.filename else ''
+        original_file_ext = Path(cleaned_filename).suffix.lower()
 
         # 检查文件扩展名是否为空
         if not original_file_ext:

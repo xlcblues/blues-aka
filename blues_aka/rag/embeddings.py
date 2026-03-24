@@ -14,12 +14,93 @@ Example:
     >>> vectors = embeddings.embed_texts(["Hello world"])
 """
 import logging
+import time
 from typing import Optional
 
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_core.embeddings import Embeddings
 
 logger = logging.getLogger(__name__)
+
+
+class RobustEmbeddings(Embeddings):
+    """增强的 Embeddings 包装类，提供重试和错误处理机制"""
+
+    def __init__(self, embeddings: Embeddings, max_retries: int = 3, retry_delay: float = 1.0):
+        """初始化增强的 Embeddings
+
+        Args:
+            embeddings: 基础 Embeddings 实例
+            max_retries: 最大重试次数，默认 3 次
+            retry_delay: 重试延迟（秒），默认 1 秒
+        """
+        self._embeddings = embeddings
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """嵌入文档，带有重试机制
+
+        Args:
+            texts: 要嵌入的文本列表
+
+        Returns:
+            嵌入向量列表
+
+        Raises:
+            Exception: 重试次数用尽后仍然失败时抛出异常
+        """
+        last_exception = None
+
+        for attempt in range(self._max_retries):
+            try:
+                logger.debug(f"Embedding {len(texts)} texts (attempt {attempt + 1}/{self._max_retries})")
+                return self._embeddings.embed_documents(texts)
+            except Exception as e:
+                last_exception = e
+                if attempt < self._max_retries - 1:
+                    wait_time = self._retry_delay * (2 ** attempt)  # 指数退避
+                    logger.warning(
+                        f"Embedding failed (attempt {attempt + 1}/{self._max_retries}): {e}. "
+                        f"Retrying in {wait_time:.1f}s..."
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Embedding failed after {self._max_retries} attempts: {e}")
+
+        raise last_exception
+
+    def embed_query(self, text: str) -> list[float]:
+        """嵌入查询文本，带有重试机制
+
+        Args:
+            text: 要嵌入的查询文本
+
+        Returns:
+            嵌入向量
+
+        Raises:
+            Exception: 重试次数用尽后仍然失败时抛出异常
+        """
+        last_exception = None
+
+        for attempt in range(self._max_retries):
+            try:
+                logger.debug(f"Embedding query (attempt {attempt + 1}/{self._max_retries})")
+                return self._embeddings.embed_query(text)
+            except Exception as e:
+                last_exception = e
+                if attempt < self._max_retries - 1:
+                    wait_time = self._retry_delay * (2 ** attempt)  # 指数退避
+                    logger.warning(
+                        f"Query embedding failed (attempt {attempt + 1}/{self._max_retries}): {e}. "
+                        f"Retrying in {wait_time:.1f}s..."
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Query embedding failed after {self._max_retries} attempts: {e}")
+
+        raise last_exception
 
 
 def get_embeddings(
@@ -68,15 +149,27 @@ def get_embeddings(
     logger.debug(f"batch_size: {batch_size}")
 
     try:
-        embeddings = OpenAIEmbeddings(
+        # 创建基础 Embeddings 实例
+        base_embeddings = OpenAIEmbeddings(
             model=model,
             api_key=_config.default_api_key,
             base_url=_config.default_api_base,
             chunk_size=batch_size,
+            # 添加超时设置（秒）
+            request_timeout=60.0,
+            # 添加重试配置
+            max_retries=2,
             **kwargs
         )
 
-        logger.info(f"Embedding 模型创建成功")
+        # 包装为增强的 Embeddings，提供额外的重试机制
+        embeddings = RobustEmbeddings(
+            embeddings=base_embeddings,
+            max_retries=3,
+            retry_delay=1.0
+        )
+
+        logger.info(f"Embedding 模型创建成功（带增强重试机制）")
         return embeddings
 
     except Exception as e:
@@ -97,16 +190,16 @@ def get_embedding_dimension(model: Optional[str] = None) -> int:
 
     Note:
         - 目前支持的模型及其维度:
-            - embedding-3: 1024
+            - embedding-2: 1024
         - 如果传入未知模型，会记录警告日志并返回默认值 1024
 
     Example:
-        >>> dim = get_embedding_dimension("embedding-3")
+        >>> dim = get_embedding_dimension("embedding-2")
         >>> print(dim)  # 输出: 1024
     """
     model = model or _config.embedding_model
     dimensions = {
-        "embedding-3": 1024,
+        "embedding-2": 1024,
     }
 
     if model not in dimensions:
@@ -119,7 +212,7 @@ def get_embedding_dimension(model: Optional[str] = None) -> int:
 # 预定义的 Embedding 配置
 EMBEDDING_CONFIGS: dict[str, dict[str, str]] = {
     "fast": {
-        "model": "embedding-3",
+        "model": "embedding-2",
         "description": "快速模型，适合开发和测试",
     }
 }
