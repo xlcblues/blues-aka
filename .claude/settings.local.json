@@ -19,7 +19,8 @@
       "Bash(redis-cli ping:*)",
       "Bash(pip install:*)",
       "Bash(cd:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

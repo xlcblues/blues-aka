@@ -231,6 +231,39 @@
             <el-icon class="info-icon"><InfoFilled /></el-icon>
           </el-tooltip>
         </div>
+
+        <!-- 分隔线 -->
+        <el-divider direction="vertical" class="tool-divider" />
+
+        <!-- 流式输出速度控制 -->
+        <div class="tool-section speed-section">
+          <el-icon class="tool-icon speed-icon"><Timer /></el-icon>
+          <span class="tool-label">输出速度</span>
+          <el-select
+            v-model="outputSpeed"
+            class="speed-select"
+            @change="handleSpeedChange"
+            :disabled="isStreaming"
+          >
+            <el-option
+              v-for="option in speedOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            >
+              <div class="speed-option">
+                <span class="speed-option-label">{{ option.label }}</span>
+                <span class="speed-option-desc">{{ option.desc }}</span>
+              </div>
+            </el-option>
+          </el-select>
+          <el-tooltip
+            content="控制AI回复的输出速度，可根据个人喜好和阅读习惯调整"
+            placement="top"
+          >
+            <el-icon class="info-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
+        </div>
       </div>
     </div>
 
@@ -309,11 +342,13 @@
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Reading, Management, Check, Loading, CircleClose, Search, InfoFilled, MagicStick } from '@element-plus/icons-vue'
+import { Reading, Management, Check, Loading, CircleClose, Search, InfoFilled, MagicStick, Timer } from '@element-plus/icons-vue'
 import { chatApi, conversationApi, agentApi } from '../api/agent'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
 import { renderMarkdown } from '../utils/markdown'
 import { formatTime } from '../utils/time'
+import { throttle } from 'lodash-es'
+import { showErrorNotification, ErrorTypes, withRetry, getErrorType } from '../utils/errorHandler'
 import KnowledgeBaseManager from '../components/KnowledgeBaseManager.vue'
 
 const router = useRouter()
@@ -340,6 +375,15 @@ const enableWebSearch = ref(false)
 
 // 深度思考相关状态
 const showReasoning = ref(false)
+
+// 流式输出速度控制
+const outputSpeed = ref(30)  // 默认 30 字符/秒
+const speedOptions = [
+  { label: '慢速', value: 15, desc: '适合仔细阅读' },
+  { label: '正常', value: 30, desc: '推荐速度' },
+  { label: '快速', value: 80, desc: '提高效率' },
+  { label: '极速', value: 0, desc: '原始速度，无限制' }
+]
 
 // 输入相关
 const inputMessage = ref('')
@@ -426,10 +470,13 @@ const sendMessage = async (useStream = true) => {
   }
 }
 
-// 流式发送消息
+// 流式发送消息（带固定速度控制）
 const sendMessageStream = async (content) => {
   // 用户消息对象，用于错误时移除
   let userMessage = null
+  const tokenBuffer = []  // token 缓冲区
+  let isProcessing = false  // 是否正在处理缓冲区
+  let receiveComplete = false  // 接收是否完成
 
   try {
     isStreaming.value = true
@@ -474,92 +521,160 @@ const sendMessageStream = async (content) => {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    // ========== 边接收边渲染模式 ==========
 
-      const chunk = decoder.decode(value)
-      const lines = chunk.split('\n')
+    // 启动接收线程（异步）
+    const receiveData = async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6))
+          const chunk = decoder.decode(value)
+          const lines = chunk.split('\n')
 
-            if (data.type === 'start') {
-              // 开始流式响应
-              if (data.reasoning_enabled) {
-                isReasoningPhase.value = true
-              }
-            } else if (data.type === 'reasoning') {
-              // 推理内容
-              streamingReasoning.value += data.content
-              isReasoningPhase.value = true
-              await nextTick()
-              scrollToBottom()
-            } else if (data.type === 'reasoning_end') {
-              // 推理结束
-              isReasoningPhase.value = false
-            } else if (data.type === 'content') {
-              // 最终内容(推理模式)或普通token模式
-              streamingContent.value += data.content
-              await nextTick()
-              scrollToBottom()
-            } else if (data.type === 'token') {
-              // 普通模式的token(非推理模式)
-              streamingContent.value += data.content
-              await nextTick()
-              scrollToBottom()
-            } else if (data.type === 'end') {
-              // 先保存流式内容
-              const finalContent = streamingContent.value
-              const finalReasoning = streamingReasoning.value
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
 
-              // 添加到消息列表
-              const messageData = {
-                id: data.message_id,
-                role: 'assistant',
-                content: finalContent,
-                created_at: new Date().toISOString()
-              }
-
-              // 如果有推理过程,添加到消息中
-              if (finalReasoning) {
-                messageData.reasoning = {
-                  content: finalReasoning,
-                  length: finalReasoning.length
+                // 将事件添加到缓冲区
+                if (data.type === 'start') {
+                  tokenBuffer.push({ type: 'start', reasoning_enabled: data.reasoning_enabled })
+                } else if (data.type === 'reasoning') {
+                  tokenBuffer.push({ type: 'reasoning', content: data.content })
+                } else if (data.type === 'reasoning_end') {
+                  tokenBuffer.push({ type: 'reasoning_end' })
+                } else if (data.type === 'content') {
+                  tokenBuffer.push({ type: 'content', content: data.content })
+                } else if (data.type === 'token') {
+                  tokenBuffer.push({ type: 'token', content: data.content })
+                } else if (data.type === 'end') {
+                  tokenBuffer.push({ type: 'end', message_id: data.message_id, tokens: data.tokens })
+                } else if (data.type === 'error') {
+                  tokenBuffer.push({ type: 'error', message: data.message })
                 }
+              } catch (e) {
+                // 忽略解析错误
               }
-
-              messages.value.push(messageData)
-
-              // 等待消息添加完成后，再清空流式状态
-              await nextTick()
-
-              // 使用平滑过渡，先隐藏流式消息
-              streamingContent.value = ''
-              streamingReasoning.value = ''
-
-              // 延迟重置流式状态，让DOM有时间渲染
-              setTimeout(() => {
-                isStreaming.value = false
-                isReasoningPhase.value = false
-              }, 50)
-
-              // 滚动到底部
-              await nextTick()
-              scrollToBottom()
-            } else if (data.type === 'error') {
-              ElMessage.error(data.message || '发送消息失败')
-              streamingContent.value = ''
-              streamingReasoning.value = ''
             }
-          } catch (e) {
-            // 忽略解析错误
           }
         }
+        receiveComplete = true
+      } catch (error) {
+        console.error('接收数据出错:', error)
+        tokenBuffer.push({ type: 'error', message: '接收数据失败' })
+        receiveComplete = true
       }
     }
+
+    // 启动渲染线程（异步）
+    const processBuffer = async () => {
+      if (isProcessing) return
+      isProcessing = true
+
+      let endReceived = false  // 是否收到 end 事件
+
+      while (true) {
+        // 如果缓冲区为空
+        if (tokenBuffer.length === 0) {
+          if (endReceived) {
+            // 已收到 end 事件且缓冲区为空，退出
+            break
+          }
+          if (receiveComplete) {
+            // 接收完成但未收到 end，等待一下
+            await new Promise(resolve => setTimeout(resolve, 50))
+            continue
+          }
+          // 等待 10ms 后继续
+          await new Promise(resolve => setTimeout(resolve, 10))
+          continue
+        }
+
+        const token = tokenBuffer.shift()
+
+        if (token.type === 'start') {
+          if (token.reasoning_enabled) {
+            isReasoningPhase.value = true
+          }
+        } else if (token.type === 'reasoning') {
+          streamingReasoning.value += token.content
+          isReasoningPhase.value = true
+        } else if (token.type === 'reasoning_end') {
+          isReasoningPhase.value = false
+        } else if (token.type === 'content' || token.type === 'token') {
+          streamingContent.value += token.content
+        } else if (token.type === 'end') {
+          // 标记收到 end 事件，但继续处理剩余缓冲区内容
+          endReceived = true
+          continue
+        } else if (token.type === 'error') {
+          ElMessage.error(token.message || '发送消息失败')
+          streamingContent.value = ''
+          streamingReasoning.value = ''
+          break
+        }
+
+        // 更新UI和滚动
+        await nextTick()
+        scrollToBottom()
+
+        // ========== 固定速度控制核心逻辑 ==========
+        // 每个字（token）都单独处理，根据速度设置不同的延迟
+        if (outputSpeed.value === 0) {
+          // 极速模式：不延迟，直接显示（原始流式速度）
+          continue
+        } else {
+          // 其他模式：每个字之间都有延迟，延迟时间 = 1000ms / 速度
+          const delay = Math.max(10, Math.floor(1000 / outputSpeed.value))
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+      }
+
+      // 流式输出结束后保存消息
+      if (endReceived && streamingContent.value) {
+        const finalContent = streamingContent.value
+        const finalReasoning = streamingReasoning.value
+
+        const messageData = {
+          id: Date.now(),  // 使用临时 ID
+          role: 'assistant',
+          content: finalContent,
+          created_at: new Date().toISOString()
+        }
+
+        if (finalReasoning) {
+          messageData.reasoning = {
+            content: finalReasoning,
+            length: finalReasoning.length
+          }
+        }
+
+        messages.value.push(messageData)
+        await nextTick()
+
+        // 清空流式状态
+        streamingContent.value = ''
+        streamingReasoning.value = ''
+
+        setTimeout(() => {
+          isStreaming.value = false
+          isReasoningPhase.value = false
+        }, 50)
+
+        await nextTick()
+        scrollToBottom()
+      }
+
+      isProcessing = false
+    }
+
+    // 同时启动接收和渲染线程
+    await Promise.all([
+      receiveData(),
+      processBuffer()
+    ])
 
     // 只刷新对话信息（标题、消息统计等），不需要重新获取消息列表
     await fetchConversation()
@@ -568,8 +683,10 @@ const sendMessageStream = async (content) => {
     if (error.name === 'AbortError') {
       ElMessage.info('已停止生成')
     } else {
-      console.error('发送消息失败:', error)
-      ElMessage.error('发送消息失败')
+      // 使用增强的错误处理
+      showErrorNotification(error, ElMessage, {
+        duration: 5000
+      })
 
       // 移除临时添加的用户消息
       if (userMessage) {
@@ -578,11 +695,19 @@ const sendMessageStream = async (content) => {
           messages.value.splice(index, 1)
         }
       }
+
+      // 如果是认证错误，跳转到登录页
+      if (getErrorType(error) === ErrorTypes.AUTH) {
+        setTimeout(() => {
+          router.push('/login')
+        }, 2000)
+      }
     }
     streamingContent.value = ''
     streamingReasoning.value = ''
   } finally {
     isStreaming.value = false
+    isProcessing = false
     abortController.value = null
   }
 }
@@ -905,12 +1030,12 @@ const handleKeydown = (e) => {
   }
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
+// 滚动到底部（使用 throttle 节流优化性能）
+const scrollToBottom = throttle(() => {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
-}
+}, 100)  // 100ms 内最多执行一次
 
 // 监听输入框内容变化，动态调整行数
 watch(inputMessage, (newValue) => {
@@ -980,8 +1105,26 @@ const handleKnowledgeBaseSelected = (kbName) => {
   handleKnowledgeBaseChange(kbName)
 }
 
+// 速度变化处理
+const handleSpeedChange = (value) => {
+  outputSpeed.value = value
+  localStorage.setItem('chat_output_speed', value)
+
+  // 显示当前速度提示
+  const option = speedOptions.find(opt => opt.value === value)
+  if (option) {
+    ElMessage.success(`输出速度已设置为：${option.label}`)
+  }
+}
+
 // 初始化
 onMounted(async () => {
+  // 从 localStorage 读取保存的速度设置
+  const savedSpeed = localStorage.getItem('chat_output_speed')
+  if (savedSpeed) {
+    outputSpeed.value = parseInt(savedSpeed)
+  }
+
   conversationId.value = route.query.conversationId || null
 
   if (conversationId.value) {
@@ -1286,6 +1429,48 @@ watch(conversationId, async (newId, oldId) => {
 
 .thinking-icon {
   color: #8b5cf6;
+}
+
+/* 流式输出速度控制样式 */
+.speed-section {
+  flex: 1;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.speed-icon {
+  color: #f59e0b;
+}
+
+.speed-select {
+  width: 120px;
+}
+
+.speed-select :deep(.el-input__wrapper) {
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.speed-select :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #f59e0b inset;
+}
+
+.speed-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.speed-option-label {
+  font-weight: 500;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.speed-option-desc {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .typing-indicator {

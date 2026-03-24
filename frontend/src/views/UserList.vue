@@ -228,6 +228,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '../api/user'
+import { useAuthStore } from '../stores/auth'
 
 export default {
   name: 'UserList',
@@ -342,11 +343,9 @@ export default {
           const status = error.response.status
           if (status === 401) {
             errorMessage = '未授权访问，请重新登录'
-            // 清除本地登录状态并跳转到登录页
-            localStorage.removeItem('isLoggedIn')
-            localStorage.removeItem('access_token')
-            localStorage.removeItem('refresh_token')
-            localStorage.removeItem('username')
+            // 调用 authStore 的 logout 方法，会调用后端登出API
+            const authStore = useAuthStore()
+            await authStore.logout()
             setTimeout(() => {
               router.push('/login')
             }, 2000)
