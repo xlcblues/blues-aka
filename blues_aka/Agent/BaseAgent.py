@@ -68,6 +68,7 @@ from blues_aka.rag.index_manager import IndexManager
 from blues_aka.rag.retrievers import create_retriever, create_retriever_tool
 from blues_aka.Agent.tool_memory import ToolCallMemory, extract_tool_calls_from_messages
 from blues_aka.Agent.tool_cache import ToolCacheManager
+from blues_aka.Agent.agent_metrics import get_global_metrics, track_agent_performance
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ class BaseAgent:
             checkpoint_db_path: Optional[str] = None,
             enable_tool_cache: bool = False,
             tool_cache_ttl_minutes: int = 30,
+            enable_metrics: bool = False,
             **kwargs: Any):
         """
         初始化智能体实例
@@ -343,6 +345,15 @@ class BaseAgent:
         else:
             logger.info("工具调用缓存未启用(默认)")
 
+        # 初始化性能监控
+        self.enable_metrics = enable_metrics
+        if enable_metrics:
+            self.metrics = get_global_metrics()
+            logger.info("Agent性能监控已启用")
+        else:
+            self.metrics = None
+            logger.info("Agent性能监控未启用(默认)")
+
         # 初始化记忆组件 - 使用 LangChain 的 ConversationTokenBufferMemory
         # 注意: 默认禁用,因为每次创建新 Agent 实例时记忆会重置
         # 只有在需要长期保持状态的场景下才启用
@@ -388,6 +399,12 @@ class BaseAgent:
 
         try:
             # 创建Agent，传入 checkpointer
+            logger.info("开始调用 create_agent...")
+            logger.info(f"  模型: {self.model}")
+            logger.info(f"  工具数量: {len(self.tools) if self.tools else 0}")
+            logger.info(f"  系统提示词: {self.system_prompt[:50]}...")
+            logger.info(f"  checkpointer: {self.checkpointer}")
+
             self.graph = create_agent(
                 model=self.model,
                 tools=self.tools if self.tools else None,
@@ -399,7 +416,9 @@ class BaseAgent:
             logger.info("Agent 创建成功（CompiledStateGraph）")
             logger.debug(f"配置: debug={self.debug}, tools={len(self.tools)}, checkpointing={enable_checkpointing}")
         except Exception as e:
-            logger.error(e)
+            logger.error(f"create_agent 调用失败: {e}")
+            import traceback
+            traceback.print_exc()
             raise e
 
     # 普通输出
@@ -468,6 +487,15 @@ class BaseAgent:
             - 对于长响应，建议使用 streaming() 方法获得更好的用户体验
             - chat_history 中的消息顺序应为时间正序（从早到晚）
         """
+
+        # 性能监控开始
+        import time
+        start_time = time.time()
+        model_name = 'unknown'
+        if hasattr(self.model, 'model_name'):
+            model_name = self.model.model_name
+        elif isinstance(self.model, str):
+            model_name = self.model
 
         try:
             messages = []
@@ -553,12 +581,33 @@ class BaseAgent:
             logger.info(f"Agent 调用完成，输出长度: {len(ai_response)} 字符")
             logger.debug(f"输出: {ai_response[:100]}...")
 
+            # 记录性能指标
+            duration = time.time() - start_time
+            if self.metrics:
+                self.metrics.record_request(
+                    model=model_name,
+                    duration=duration,
+                    success=True,
+                    agent_type='base'
+                )
+
             return ai_response
 
 
         except Exception as e:
             error_msg = f"Agent 执行失败: {str(e)}"
             logger.error(f"{error_msg}")
+
+            # 记录错误指标
+            duration = time.time() - start_time
+            if self.metrics:
+                self.metrics.record_error(
+                    model=model_name,
+                    error=str(e),
+                    duration=duration,
+                    agent_type='base'
+                )
+
             return f"抱歉，处理您的请求时出现错误: {str(e)}"
 
     # 流式输出
@@ -1597,6 +1646,120 @@ class BaseAgent:
             logger.info("工具缓存已清除")
         else:
             logger.warning("工具缓存未启用")
+
+    def get_performance_stats(
+        self,
+        group_by: Optional[str] = None,
+        force_refresh: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        获取性能统计信息
+
+        Args:
+            group_by: 分组字段（如 'model'）
+            force_refresh: 是否强制刷新缓存
+
+        Returns:
+            Optional[Dict[str, Any]]: 性能统计信息，如果未启用监控返回 None
+                - total_requests: 总请求数
+                - successful_requests: 成功请求数
+                - failed_requests: 失败请求数
+                - success_rate: 成功率（0-1）
+                - avg_duration: 平均响应时间（秒）
+                - min_duration: 最短响应时间
+                - max_duration: 最长响应时间
+                - p50_duration: P50 响应时间
+                - p95_duration: P95 响应时间
+                - p99_duration: P99 响应时间
+                - total_input_tokens: 总输入token数
+                - total_output_tokens: 总输出token数
+                - avg_input_tokens: 平均输入token数
+                - avg_output_tokens: 平均输出token数
+
+        使用示例：
+            >>> agent = BaseAgent()
+            >>> stats = agent.get_performance_stats()
+            >>> print(f"平均响应时间: {stats['avg_duration']:.2f}秒")
+            >>> print(f"成功率: {stats['success_rate']:.2%}")
+            >>>
+            >>> # 按模型分组统计
+            >>> stats_by_model = agent.get_performance_stats(group_by='model')
+            >>> for model, model_stats in stats_by_model.items():
+            ...     print(f"{model}: {model_stats['avg_duration']:.2f}秒")
+        """
+        if not self.metrics:
+            logger.warning("性能监控未启用")
+            return None
+
+        return self.metrics.get_statistics(group_by=group_by, force_refresh=force_refresh)
+
+    def get_recent_performance(
+        self,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        获取最近的性能记录
+
+        Args:
+            limit: 返回记录数（默认100）
+            filters: 过滤条件（如 {'model': 'glm-4.5'}）
+
+        Returns:
+            Optional[List[Dict[str, Any]]]: 性能记录列表，如果未启用监控返回 None
+                每条记录包含:
+                - timestamp: 时间戳
+                - model: 模型名称
+                - duration: 响应时间
+                - success: 是否成功
+                - error: 错误信息（如果失败）
+                - input_tokens: 输入token数
+                - output_tokens: 输出token数
+                - agent_type: Agent类型
+
+        使用示例：
+            >>> agent = BaseAgent()
+            >>> # 获取最近100条记录
+            >>> recent = agent.get_recent_performance(limit=100)
+            >>> for record in recent:
+            ...     print(f"{record['timestamp']}: {record['duration']:.2f}秒")
+            >>>
+            >>> # 只看某个模型的记录
+            >>> glm_records = agent.get_recent_performance(
+            ...     limit=50,
+            ...     filters={'model': 'glm-4.5'}
+            ... )
+        """
+        if not self.metrics:
+            logger.warning("性能监控未启用")
+            return None
+
+        return self.metrics.get_recent_metrics(limit=limit, filters=filters)
+
+    def get_performance_summary(self) -> Optional[Dict[str, Any]]:
+        """
+        获取性能摘要
+
+        Returns:
+            Optional[Dict[str, Any]]: 性能摘要，如果未启用监控返回 None
+                - total_requests: 总请求数
+                - success_rate: 成功率
+                - avg_duration: 平均响应时间
+                - p95_duration: P95 响应时间
+                - recent_avg_duration: 最近10次平均响应时间
+
+        使用示例：
+            >>> agent = BaseAgent()
+            >>> summary = agent.get_performance_summary()
+            >>> print(f"总请求: {summary['total_requests']}")
+            >>> print(f"成功率: {summary['success_rate']:.2%}")
+            >>> print(f"平均响应: {summary['avg_duration']:.2f}秒")
+        """
+        if not self.metrics:
+            logger.warning("性能监控未启用")
+            return None
+
+        return self.metrics.get_performance_summary()
 
     def get_state(self, thread_id: str) -> Optional[Dict[str, Any]]:
         """

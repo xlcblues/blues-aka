@@ -33,6 +33,7 @@ from marshmallow import ValidationError
 from sqlalchemy import func
 
 from blues_aka.Agent.BaseAgent import BaseAgent
+from blues_aka.Agent.agent_manager import get_agent_manager
 from blues_aka.Agent.models.conversation import Conversation
 from blues_aka.Agent.models.message import Message
 from blues_aka.Agent.schemas import ChatSchema
@@ -214,14 +215,18 @@ def chat(conversation_id):
                     except json.JSONDecodeError:
                         logger.warning("RAG配置JSON解析失败，使用默认配置")
 
-        logger.info(f"创建 BaseAgent，配置: {agent_config}")
+        logger.info(f"创建/复用 BaseAgent，配置: {agent_config}")
 
-        # 创建agent实例
+        # 使用AgentManager获取或创建Agent实例
         try:
-            agent = BaseAgent(**agent_config)
-            logger.info("BaseAgent 创建成功")
+            # 使用conversation_id作为agent_id，确保同一对话复用Agent
+            agent = get_agent_manager().get_or_create_agent(
+                agent_config=agent_config,
+                agent_id=f"conv_{conversation_id}"
+            )
+            logger.info("BaseAgent 获取/创建成功")
         except Exception as e:
-            logger.error(f"创建 BaseAgent 失败: {str(e)}", exc_info=True)
+            logger.error(f"获取/创建 BaseAgent 失败: {str(e)}", exc_info=True)
             raise
         # 流式和非流式输出
         if stream:
@@ -890,7 +895,11 @@ def regenerate_message(conversation_id):
                     except json.JSONDecodeError:
                         logger.warning("RAG配置JSON解析失败，使用默认配置")
 
-        agent = BaseAgent(**agent_config)
+        # 使用AgentManager获取或创建Agent实例
+        agent = get_agent_manager().get_or_create_agent(
+            agent_config=agent_config,
+            agent_id=f"conv_{conversation_id}"
+        )
 
         if stream:
             return Response(
