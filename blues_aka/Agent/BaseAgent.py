@@ -53,7 +53,7 @@ from datetime import datetime
 
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
 from langchain_classic.memory import ConversationTokenBufferMemory
@@ -66,6 +66,7 @@ from blues_aka.core.models import get_chat_model
 from blues_aka.rag.embeddings import get_embeddings
 from blues_aka.rag.index_manager import IndexManager
 from blues_aka.rag.retrievers import create_retriever, create_retriever_tool
+from blues_aka.Agent.tool_memory import ToolCallMemory, extract_tool_calls_from_messages
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +319,10 @@ class BaseAgent:
         self.enable_checkpointing = enable_checkpointing
         self.checkpoint_db_path = checkpoint_db_path
 
+        # 初始化工具调用记忆
+        self.tool_memory = ToolCallMemory(max_history=50)
+        logger.info("工具调用记忆已初始化")
+
         # 初始化记忆组件 - 使用 LangChain 的 ConversationTokenBufferMemory
         # 注意: 默认禁用,因为每次创建新 Agent 实例时记忆会重置
         # 只有在需要长期保持状态的场景下才启用
@@ -495,14 +500,33 @@ class BaseAgent:
                     ai_response = msg.content
                     break
 
+            # 提取并保存工具调用信息
+            tool_calls = extract_tool_calls_from_messages(output_messages)
+            if tool_calls:
+                logger.info(f"检测到 {len(tool_calls)} 个工具调用")
+                for tc in tool_calls:
+                    self.tool_memory.add_tool_call(
+                        tool_name=tc["tool"],
+                        tool_input=tc["input"],
+                        tool_output=tc.get("output", "")
+                    )
+
             # 如果未使用 checkpointing，手动保存到记忆组件
             if not (self.enable_checkpointing and thread_id):
                 if self.enable_memory and self.memory:
                     # 将当前交互保存到记忆组件
-                    # 这样可以在下次调用时自动使用，而无需手动传递完整历史
+                    # 包含工具调用摘要
+                    memory_output = {"output": ai_response}
+
+                    if tool_calls:
+                        # 添加工具调用摘要到记忆中
+                        tool_summary = self._summarize_tool_calls(tool_calls)
+                        if tool_summary:
+                            memory_output["tool_calls"] = tool_summary
+
                     self.memory.save_context(
                         {"input": input_text},
-                        {"output": ai_response}
+                        memory_output
                     )
                     logger.debug(f"记忆中的消息数: {len(self.memory.chat_memory.messages)}")
 
@@ -680,6 +704,9 @@ class BaseAgent:
                             logger.debug(f"流式输出: {chunk.content[:50]}...")
                             yield chunk.content
                             full_response += chunk.content
+                    elif isinstance(chunk, ToolMessage):
+                        # 收集工具消息
+                        full_response += chunk.content
 
                 elif stream_mode == "updates":
                     if isinstance(chunk, dict) and "message" in chunk:
@@ -689,6 +716,10 @@ class BaseAgent:
                             if isinstance(last_msg, AIMessage) and last_msg.content:
                                 yield last_msg.content
                                 full_response += last_msg.content
+
+            # 提取并保存工具调用信息
+            # 注意: 流式输出中可能没有完整的工具调用信息
+            # 这里简化处理，只保存基本的 AI 响应
 
             # 如果未使用 checkpointing，手动保存到记忆组件
             if not (self.enable_checkpointing and thread_id):
@@ -1456,6 +1487,70 @@ class BaseAgent:
     def _get_timestamp(self) -> str:
         """获取当前时间戳"""
         return datetime.now().isoformat()
+
+    def _summarize_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
+        """
+        总结工具调用
+
+        将工具调用列表转换为可读的摘要文本。
+
+        Args:
+            tool_calls: 工具调用记录列表
+
+        Returns:
+            str: 工具调用摘要文本
+
+        示例:
+            工具调用:
+            - [search] {'query': '机器学习'} -> 找到10个相关文档...
+            - [calculator] {'expression': '2+2'} -> 结果: 4
+        """
+        if not tool_calls:
+            return ""
+
+        summary_parts = ["工具调用:"]
+
+        for i, tc in enumerate(tool_calls, 1):
+            tool_name = tc["tool"]
+            tool_input = tc["input"]
+            tool_output = tc.get("output", "")
+
+            # 格式化输入
+            input_str = str(tool_input)
+            if len(input_str) > 100:
+                input_str = input_str[:100] + "..."
+
+            # 格式化输出
+            output_str = tool_output
+            if len(output_str) > 200:
+                output_str = output_str[:200] + "..."
+
+            summary_parts.append(f"- [{tool_name}] {input_str} -> {output_str}")
+
+        return "\n".join(summary_parts)
+
+    def get_tool_memory(self) -> ToolCallMemory:
+        """
+        获取工具调用记忆对象
+
+        Returns:
+            ToolCallMemory: 工具调用记忆实例
+        """
+        return self.tool_memory
+
+    def get_tool_call_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        获取工具调用历史
+
+        Args:
+            limit: 返回的最大记录数
+                - None: 返回所有记录
+                - 默认 None
+
+        Returns:
+            List[Dict[str, Any]]: 工具调用记录列表
+        """
+        return self.tool_memory.get_history(limit)
 
     def get_state(self, thread_id: str) -> Optional[Dict[str, Any]]:
         """
