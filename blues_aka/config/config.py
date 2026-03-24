@@ -105,8 +105,8 @@ class BaseConfig(BaseSettings):
 
     # Embedding 配置
     embedding_model: str = Field(
-        default="embedding-2",
-        description="Embedding 模型名称 (智谱AI使用embedding-2)"
+        default="embedding-3",
+        description="Embedding 模型名称 (智谱AI使用embedding-2或embedding-3)"
     )
 
     embedding_batch_size: int = Field(

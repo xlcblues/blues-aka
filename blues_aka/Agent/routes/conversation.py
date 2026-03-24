@@ -1644,3 +1644,137 @@ def _get_file_type_description(file_type: str) -> str:
         'json': 'JSON 数据文件'
     }
     return descriptions.get(file_type, file_type)
+
+
+# ==================== RAG 评估相关 API ====================
+
+@conversation_bp.route('/rag/feedback', methods=['POST'])
+@jwt_required()
+@handle_api_response
+def submit_rag_feedback():
+    """提交 RAG 回答的用户反馈
+    
+    请求体:
+    {
+        "query": "用户查询",
+        "answer": "RAG 生成的回答",
+        "feedback": 5,  // 1-5 分
+        "conversation_id": 123,  // 可选
+        "message_id": 456  // 可选
+    }
+    
+    Returns:
+        {
+            "success": true,
+            "message": "反馈已记录"
+        }
+    """
+    from blues_aka.rag.evaluator import get_rag_evaluator
+    from blues_aka.Agent.models.user import User
+    
+    data = request.get_json()
+    
+    # 验证必需字段
+    required_fields = ['query', 'answer', 'feedback']
+    for field in required_fields:
+        if field not in data:
+            raise Exceptions.Common.invalid_params(f'缺少必需参数: {field}')
+    
+    query = data['query']
+    answer = data['answer']
+    feedback = data['feedback']
+    
+    # 验证反馈分数
+    if not isinstance(feedback, int) or not 1 <= feedback <= 5:
+        raise Exceptions.Common.invalid_params('feedback 必须是 1-5 之间的整数')
+    
+    # 获取当前用户
+    user_id = get_jwt_identity()
+    current_user = User.query.get(user_id)
+    
+    # 记录反馈
+    evaluator = get_rag_evaluator()
+    evaluator.log_rag_feedback(
+        query=query,
+        answer=answer,
+        feedback=feedback,
+        context={
+            'conversation_id': data.get('conversation_id'),
+            'message_id': data.get('message_id'),
+            'user_id': user_id
+        }
+    )
+    
+    logger.info(f"用户 {user_id} 提交 RAG 反馈: 查询='{query[:30]}...', 反馈={feedback}/5")
+    
+    return {
+        'success': True,
+        'message': '反馈已记录，感谢您的反馈！'
+    }
+
+
+@conversation_bp.route('/rag/metrics', methods=['GET'])
+@jwt_required()
+@handle_api_response
+def get_rag_metrics():
+    """获取 RAG 性能指标（管理员）"""
+    from blues_aka.rag.evaluator import get_rag_evaluator, get_rag_metrics_tracker
+    from blues_aka.Agent.models.user import User
+    
+    # 获取当前用户
+    user_id = get_jwt_identity()
+    current_user = User.query.get(user_id)
+    
+    # 检查权限（只有管理员可以查看）
+    if not current_user.is_admin:
+        raise Exceptions.Auth.forbidden('只有管理员可以查看 RAG 指标')
+    
+    # 获取查询参数
+    return_summary = request.args.get('summary', 'true').lower() == 'true'
+    
+    result = {}
+    
+    # 获取评估摘要
+    if return_summary:
+        evaluator = get_rag_evaluator()
+        result['summary'] = evaluator.get_performance_summary()
+    
+    # 获取持久化指标
+    tracker = get_rag_metrics_tracker()
+    result['metrics'] = tracker.get_metrics()
+    
+    logger.info(f"管理员 {user_id} 查看 RAG 指标")
+    
+    return result
+
+
+@conversation_bp.route('/rag/export', methods=['POST'])
+@jwt_required()
+@handle_api_response
+def export_rag_evaluations():
+    """导出 RAG 评估数据（管理员）"""
+    from blues_aka.rag.evaluator import get_rag_evaluator
+    from blues_aka.Agent.models.user import User
+    
+    # 获取当前用户
+    user_id = get_jwt_identity()
+    current_user = User.query.get(user_id)
+    
+    # 检查权限
+    if not current_user.is_admin:
+        raise Exceptions.Auth.forbidden('只有管理员可以导出评估数据')
+    
+    data = request.get_json() or {}
+    file_path = data.get('file_path')
+    
+    # 导出数据
+    evaluator = get_rag_evaluator()
+    exported_path = evaluator.export_evaluations(file_path)
+    
+    logger.info(f"管理员 {user_id} 导出 RAG 评估数据: {exported_path}")
+    
+    return {
+        'success': True,
+        'file_path': exported_path,
+        'message': '评估数据已导出'
+    }

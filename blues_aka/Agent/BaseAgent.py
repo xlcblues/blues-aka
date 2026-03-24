@@ -831,8 +831,9 @@ class BaseAgent:
             logger.info("Agent 流式调用完成")
 
         except Exception as e:
+            import traceback
             error_msg = f"Agent 流式执行失败: {str(e)}"
-            logger.error(f"{error_msg}")
+            logger.error(f"{error_msg}\n{traceback.format_exc()}")
             yield f"\n\n抱歉，处理您的请求时出现错误: {str(e)}"
 
     async def ainvoke(
@@ -1426,16 +1427,22 @@ class BaseAgent:
 
             retriever_config = config or {}
             logger.info(f"[RAG] 9. 创建检索器，配置: {retriever_config}...")
-            retriever = create_retriever(vector_store=vector_store, **retriever_config)
-            logger.info(f"[RAG] 10. 检索器创建成功")
+            base_retriever = create_retriever(vector_store=vector_store, **retriever_config)
+            logger.info(f"[RAG] 10. 基础检索器创建成功")
 
-            logger.info(f"[RAG] 11. 创建检索工具...")
+            # 包装为带评估功能的检索器（自动记录检索指标）
+            logger.info(f"[RAG] 11. 包装为带评估的检索器...")
+            from blues_aka.rag.evaluated_retriever import create_evaluated_retriever
+            retriever = create_evaluated_retriever(base_retriever, track_tokens=True)
+            logger.info(f"[RAG] 12. ✅ 评估检索器创建成功")
+
+            logger.info(f"[RAG] 13. 创建检索工具...")
             tool = create_retriever_tool(
                 retriever=retriever,
                 name="knowledge_base",
                 description="搜索知识库中的相关信息，用于回答基于文档的问题"
             )
-            logger.info(f"[RAG] 12. ✅ RAG工具创建成功: {index_name}")
+            logger.info(f"[RAG] 14. ✅ RAG工具创建成功（带评估功能）: {index_name}")
 
             return tool
 
