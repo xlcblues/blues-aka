@@ -24,9 +24,11 @@ from typing import Optional, List, Any, Dict
 
 from langchain.agents import create_agent
 from langchain_core.retrievers import BaseRetriever
+from langchain_core.language_models import BaseChatModel
 
 from blues_aka.core import get_model_string
 from blues_aka.rag.retrievers import create_retriever_tool
+from blues_aka.rag.conversational_rag import ConversationalRAGAgent
 
 logger = logging.getLogger(__name__)
 
@@ -189,45 +191,83 @@ def format_rag_response(
 
 def create_conversational_rag_agent(
     retriever: BaseRetriever,
-    model: Optional[str] = None,
+    model: Optional[BaseChatModel] = None,
+    max_history_tokens: int = 2000,
+    max_retrieved_docs: int = 5,
+    enable_query_rewriting: bool = True,
     system_prompt: Optional[str] = None,
     **kwargs,
 ):
     """创建支持对话历史的 RAG Agent
 
-    创建一个可以保持对话历史的 RAG Agent，实现多轮对话问答。
+    创建一个可以保持对话历史的 RAG Agent，实现上下文感知的多轮对话问答。
+    与标准 RAG Agent 不同，这个 Agent 会考虑对话历史来优化检索和回答。
 
     Args:
         retriever (BaseRetriever): 向量检索器实例
-        model (Optional[str]): 使用的语言模型名称
-            默认值: None (使用配置文件中的默认模型)
+        model (Optional[BaseChatModel]): 使用的语言模型实例
+            如果为 None，则使用配置文件中的默认模型
+            默认值: None
+        max_history_tokens (int): 对话历史的最大 token 数量
+            用于控制传递给模型的上下文大小
+            超过此限制时会自动压缩历史
+            默认值: 2000
+        max_retrieved_docs (int): 最大检索文档数量
+            控制每次检索返回的文档数量
+            默认值: 5
+        enable_query_rewriting (bool): 是否启用查询重写
+            启用后会基于对话历史重写查询，提高检索准确性
+            默认值: True
         system_prompt (Optional[str]): 系统提示词
-            默认值: None (使用默认提示词)
-        **kwargs: 传递给 create_rag_agent 的其他参数
+            如果为 None，使用默认提示词
+            默认值: None
+        **kwargs: 其他参数（当前版本未使用）
 
     Returns:
-        支持对话历史的 Agent 实例
+        ConversationalRAGAgent: 支持对话历史的 RAG Agent 实例
 
     Note:
-        - 该函数是 create_rag_agent 的别名，专门用于支持对话场景
-        - Agent 可以记住之前的对话上下文，实现连贯的多轮对话
+        - Agent 会自动维护对话历史
+        - 支持查询重写，将简短的查询扩展为完整的上下文查询
+        - 自动压缩历史以控制 token 使用
+        - 记录检索来源，提供可追溯的答案
 
     Example:
-        >>> agent = create_conversational_rag_agent(retriever)
+        >>> from blues_aka.rag.conversational_rag import ConversationalRAGAgent
+        >>>
+        >>> agent = create_conversational_rag_agent(retriever, model=model)
+        >>>
         >>> # 第一轮对话
-        >>> result1 = agent.invoke({"messages": [{"role": "user", "content": "什么是AI？"}]})
-        >>> # 第二轮对话（可以引用之前的内容）
-        >>> result2 = agent.invoke({"messages": [
-        >>>     {"role": "user", "content": "它有哪些应用？"}
-        >>> ]})
+        >>> result1 = agent.query("什么是机器学习？")
+        >>> print(result1["answer"])
+        >>>
+        >>> # 第二轮对话（自动理解上下文）
+        >>> result2 = agent.query("它有哪些应用？")
+        >>> print(result2["answer"])  # 会理解为"机器学习的应用"
+        >>>
+        >>> # 查看来源
+        >>> print(result2["sources"])
     """
-    logger.info("创建对话式 RAG Agent")
-    return create_rag_agent(
+    logger.info("创建对话式 RAG Agent (ConversationalRAGAgent)")
+
+    # 如果没有提供模型，获取默认模型
+    if model is None:
+        model_string = get_model_string()
+        from blues_aka.core.models import get_chat_model
+        model = get_chat_model(model_name=model_string)
+
+    # 创建 ConversationalRAGAgent 实例
+    agent = ConversationalRAGAgent(
         retriever=retriever,
         model=model,
-        system_prompt=system_prompt,
-        **kwargs,
+        max_history_tokens=max_history_tokens,
+        max_retrieved_docs=max_retrieved_docs,
+        enable_query_rewriting=enable_query_rewriting,
+        system_prompt=system_prompt
     )
+
+    logger.info("ConversationalRAGAgent 创建成功")
+    return agent
 
 
 def query_rag_agent(

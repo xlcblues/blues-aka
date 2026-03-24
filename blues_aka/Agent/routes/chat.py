@@ -231,9 +231,11 @@ def chat(conversation_id):
                         stream_with_context(generate_streaming_response_with_thinking(agent, content, chat_history, conversation_id, user_id)),
                         mimetype='text/event-stream',
                         headers={
-                            'Cache-Control': 'no-cache',
-                            'X-Accel-Buffering': 'no'
-                        }
+                            'Cache-Control': 'no-cache, no-transform',
+                            'X-Accel-Buffering': 'no',
+                            'Connection': 'keep-alive',
+                        },
+                        direct_passthrough=True
                     )
                     return response
                 except Exception as e:
@@ -246,9 +248,11 @@ def chat(conversation_id):
                         stream_with_context(generate_streaming_response(agent, content, chat_history, conversation_id, user_id)),
                         mimetype='text/event-stream',
                         headers={
-                            'Cache-Control': 'no-cache',
-                            'X-Accel-Buffering': 'no'
-                        }
+                            'Cache-Control': 'no-cache, no-transform',
+                            'X-Accel-Buffering': 'no',
+                            'Connection': 'keep-alive',
+                        },
+                        direct_passthrough=True
                     )
                     return response
 
@@ -389,7 +393,7 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
         logger.info(f"创建 AI 消息，ID: {message_id}")
 
         # 发送开始事件
-        yield f"data: {json.dumps({'type': 'start', 'message_id': message_id})}\n\n"
+        yield f"data: {json.dumps({'type': 'start', 'message_id': message_id})}\n\n".encode('utf-8')
 
         # 流式生成响应
         logger.info("开始流式生成...")
@@ -399,7 +403,7 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
                 if chunk:  # 只处理非空内容
                     full_content.append(chunk)
                     # 发送 token 事件，包含实际内容
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n".encode('utf-8')
         except Exception as e:
             logger.error(f"流式生成过程出错: {str(e)}", exc_info=True)
             # 更新消息内容为错误信息
@@ -415,42 +419,39 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
 
         # 更新消息内容
         final_content = ''.join(full_content)
+
+        # 在流式结束后再保存到数据库（不影响流式输出的体验）
         if ai_message and message_id:
             ai_message.content = final_content
 
             # 提交到数据库
-            db.session.add(ai_message)
-            db.session.commit()
-
-            logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
-
-            # 清除历史缓存(因为添加了新消息)
-            Message.invalidate_history_cache(conversation_id)
-
-            # 异步更新对话统计信息
-            # 使用线程池在后台执行统计更新，避免在生成器中进行数据库操作
             try:
+                db.session.add(ai_message)
+                db.session.commit()
+                logger.info(f"AI 消息保存成功，长度: {len(final_content)} 字符")
+
+                # 清除历史缓存
+                Message.invalidate_history_cache(conversation_id)
+
+                # 异步更新对话统计信息
                 from blues_aka.tasks.conversation_task import update_conversation_stats_async
 
-                # 创建线程池执行器（如果不存在）
                 if not hasattr(generate_streaming_response, '_executor'):
                     generate_streaming_response._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="conv_stats_")
 
-                # 提交异步任务，不等待结果
                 generate_streaming_response._executor.submit(
                     update_conversation_stats_async,
                     conversation_id
                 )
-                logger.info(f"已提交对话统计更新任务: conversation_id={conversation_id}")
-            except Exception as async_error:
-                # 异步任务提交失败不影响主流程，只记录日志
-                logger.warning(
-                    f"提交对话统计更新任务失败: {str(async_error)}",
-                    exc_info=True
-                )
+            except Exception as db_error:
+                logger.error(f"保存消息或统计信息失败: {db_error}", exc_info=True)
+                try:
+                    db.session.rollback()
+                except:
+                    pass
 
         # 发送结束事件
-        yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n"
+        yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n".encode('utf-8')
 
     except Exception as e:
         logger.error(f"流式响应生成失败: {str(e)}", exc_info=True)
@@ -458,7 +459,7 @@ def generate_streaming_response(agent, content, chat_history, conversation_id, u
             db.session.rollback()
         except:
             pass
-        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n".encode('utf-8')
 
 def generate_streaming_response_with_thinking(
     agent, content, chat_history, conversation_id, user_id
@@ -532,7 +533,7 @@ def generate_streaming_response_with_thinking(
         db.session.add(ai_message)
         db.session.flush()
         message_id = ai_message.id
-        yield f"data: {json.dumps({'type': 'start', 'message_id': message_id, 'reasoning_enabled': True})}\n\n"
+        yield f"data: {json.dumps({'type': 'start', 'message_id': message_id, 'reasoning_enabled': True})}\n\n".encode('utf-8')
         full_reasoning = []
         full_content = []
         reasoning_done = False
@@ -546,7 +547,7 @@ def generate_streaming_response_with_thinking(
             if event_type == 'reasoning':
                 reasoning_text = event.get('content', "")
                 full_reasoning.append(reasoning_text)
-                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning_text})}\n\n"
+                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning_text})}\n\n".encode('utf-8')
 
                 if not content_started:
                     logger.debug("推理阶段进行中...")
@@ -557,14 +558,14 @@ def generate_streaming_response_with_thinking(
                 content_started = True
 
                 if not reasoning_done and full_reasoning:
-                    yield f"data: {json.dumps({'type': 'reasoning_end', 'total_length': sum(len(r) for r in full_reasoning)})}\n\n"
+                    yield f"data: {json.dumps({'type': 'reasoning_end', 'total_length': sum(len(r) for r in full_reasoning)})}\n\n".encode('utf-8')
                     reasoning_done = True
                     logger.debug("推理阶段结束，开始输出最终答案")
 
-                yield f"data: {json.dumps({'type': 'content', 'content': content_text})}\n\n"
+                yield f"data: {json.dumps({'type': 'content', 'content': content_text})}\n\n".encode('utf-8')
 
             elif event_type == 'error':
-                yield f"data: {json.dumps({'type': 'error', 'message': event.get('content')})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': event.get('content')})}\n\n".encode('utf-8')
                 raise Exception(event.get('content'))
 
         # 流式生成完成后，保存消息到数据库
@@ -601,7 +602,7 @@ def generate_streaming_response_with_thinking(
                 exc_info=True
             )
 
-        yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n"
+        yield f"data: {json.dumps({'type': 'end', 'message_id': message_id, 'tokens': len(final_content)})}\n\n".encode('utf-8')
 
     except Exception as e:
         logger.error(f"流式响应生成失败: {str(e)}", exc_info=True)
@@ -609,7 +610,7 @@ def generate_streaming_response_with_thinking(
             db.session.rollback()
         except:
             pass
-        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n".encode('utf-8')
 
 
 
