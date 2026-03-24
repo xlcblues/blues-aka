@@ -84,6 +84,7 @@
         @sort-change="handleSortChange"
         class="user-table"
         :empty-text="getEmptyText()"
+        :row-class-name="getRowClassName"
       >
       <el-table-column prop="id" label="#" width="80" sortable="custom" align="center">
         <template #default="{ row }">
@@ -137,16 +138,33 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
-          <el-button type="primary" size="small" @click="handleEdit(row)" class="edit-btn">
-            <el-icon><Edit /></el-icon>
-            编辑
-          </el-button>
-          <el-button type="danger" size="small" @click="handleDelete(row)" class="delete-btn">
-            <el-icon><Delete /></el-icon>
-            删除
-          </el-button>
+          <!-- 已删除用户显示恢复按钮 -->
+          <template v-if="row.is_deleted">
+            <el-button
+              type="success"
+              size="small"
+              @click="handleRestore(row)"
+              class="restore-btn"
+            >
+              <el-icon><RefreshLeft /></el-icon>
+              恢复
+            </el-button>
+            <span class="deleted-tag">已删除</span>
+          </template>
+
+          <!-- 正常用户显示编辑和删除按钮 -->
+          <template v-else>
+            <el-button type="primary" size="small" @click="handleEdit(row)" class="edit-btn">
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+            <el-button type="danger" size="small" @click="handleDelete(row)" class="delete-btn">
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
+          </template>
         </template>
       </el-table-column>
     </el-table>
@@ -620,6 +638,57 @@ export default {
       }
     }
 
+    // 恢复用户
+    const handleRestore = async (row) => {
+      try {
+        await ElMessageBox.confirm(
+          `✨ 确定要恢复用户 "${row.username}" 吗？\n\n📌 恢复后，该用户将可以正常登录和使用系统功能。`,
+          '恢复用户确认',
+          {
+            confirmButtonText: '✅ 确认恢复',
+            cancelButtonText: '❌ 取消操作',
+            type: 'success',
+            dangerouslyUseHTMLString: false,
+            center: true
+          }
+        )
+
+        const response = await userApi.restoreUser(row.id)
+        if (response.code === 200) {
+          ElMessage({
+            message: `✅ 用户 "${row.username}" 恢复成功！`,
+            type: 'success',
+            duration: 3000,
+            showClose: true
+          })
+          fetchUsers()
+        } else {
+          ElMessage({
+            message: `❌ ${response.message || '恢复失败'}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
+        }
+      } catch (error) {
+        if (error === 'cancel' || error === 'close') {
+          ElMessage({
+            message: '🚫 恢复操作已取消',
+            type: 'info',
+            duration: 2000
+          })
+        } else {
+          console.error('恢复用户失败:', error)
+          ElMessage({
+            message: `❌ 恢复失败: ${error.backendMessage || error.message || '未知错误'}`,
+            type: 'error',
+            duration: 5000,
+            showClose: true
+          })
+        }
+      }
+    }
+
     // 提交表单
     const handleSubmit = async () => {
       if (!userFormRef.value) return
@@ -905,6 +974,11 @@ export default {
       return '🐱‍👤 暂无用户数据，点击上方"新增用户"按钮创建第一个用户'
     }
 
+    // 获取表格行类名（用于已删除用户的样式）
+    const getRowClassName = ({ row }) => {
+      return row.is_deleted ? 'is_deleted' : ''
+    }
+
     // 处理键盘快捷键
     const handleKeydown = (event) => {
       // Ctrl/Cmd + N: 新增用户
@@ -967,13 +1041,15 @@ export default {
       handleCreate,
       handleEdit,
       handleDelete,
+      handleRestore,
       handleSubmit,
       handleDialogClose,
       getStatusType,
       getStatusText,
       getStatusIcon,
       formatDateTime,
-      getEmptyText
+      getEmptyText,
+      getRowClassName
     }
   }
 }
@@ -1690,5 +1766,41 @@ export default {
 :deep(.error-details-box .el-button--primary:hover) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+/* 恢复按钮样式 */
+.restore-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: none;
+  color: white;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.restore-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+/* 已删除标签样式 */
+.deleted-tag {
+  display: inline-block;
+  padding: 4px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+/* 已删除行的样式 */
+:deep(.el-table__row.is_deleted) {
+  background: rgba(239, 68, 68, 0.03);
+  opacity: 0.7;
+}
+
+:deep(.el-table__row.is_deleted:hover) {
+  background: rgba(239, 68, 68, 0.06) !important;
 }
 </style>

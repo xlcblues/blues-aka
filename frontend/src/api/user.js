@@ -141,6 +141,11 @@ export const userApi = {
     return api.delete(`/user/users/${id}`)
   },
 
+  // 恢复用户
+  restoreUser(id) {
+    return api.post(`/user/users/${id}/restore`)
+  },
+
   // 修改密码
   changePassword(id, data) {
     return api.post(`/user/users/${id}/change-password`, data)
