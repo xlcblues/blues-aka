@@ -20,64 +20,87 @@
     <!-- 知识库列表 -->
     <div v-loading="loading" class="knowledge-list">
       <el-empty v-if="!loading && knowledgeBases.length === 0" description="暂无知识库">
-        <el-button type="primary" @click="showCreateDialog">创建第一个知识库</el-button>
+        <el-button type="primary" @click="showCreateDialog">
+          <el-icon><Plus /></el-icon>
+          创建第一个知识库
+        </el-button>
       </el-empty>
 
       <el-table
         v-else
         :data="knowledgeBases"
         stripe
-        style="width: 100%"
-        :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: '600' }"
+        class="knowledge-table"
+        :header-cell-style="{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: '#ffffff',
+          fontWeight: '600',
+          fontSize: '14px'
+        }"
+        :row-style="{ height: '70px' }"
+        :cell-style="{ padding: '16px 0' }"
       >
-        <el-table-column prop="name" label="索引名称" width="180">
+        <el-table-column prop="name" label="索引名称" width="200">
           <template #default="{ row }">
-            <div class="index-name">
-              <el-icon><Reading /></el-icon>
-              <span>{{ row.name }}</span>
+            <div class="index-name-cell">
+              <div class="index-name-wrapper">
+                <el-icon class="index-icon" color="#667eea"><Reading /></el-icon>
+                <span class="index-name-text">{{ row.name }}</span>
+              </div>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="description" label="描述" min-width="200">
+        <el-table-column prop="description" label="描述" min-width="220">
           <template #default="{ row }">
-            <span>{{ row.description || '暂无描述' }}</span>
+            <div class="description-cell">
+              {{ row.description || '暂无描述' }}
+            </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="num_documents" label="文档数" width="100" align="center">
+        <el-table-column prop="num_documents" label="文档数量" width="120" align="center">
           <template #default="{ row }">
-            <el-tag type="info" size="small">{{ row.num_documents || 0 }}</el-tag>
+            <el-tag type="success" size="large" class="stat-tag">
+              <el-icon class="tag-icon"><Document /></el-icon>
+              {{ row.num_documents || 0 }}
+            </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="size_mb" label="大小" width="100" align="center">
+        <el-table-column prop="size_mb" label="存储大小" width="120" align="center">
           <template #default="{ row }">
-            <span>{{ row.size_mb ? row.size_mb.toFixed(2) + ' MB' : 'N/A' }}</span>
+            <div class="size-cell">
+              <el-icon class="size-icon"><Connection /></el-icon>
+              <span>{{ row.size_mb ? row.size_mb.toFixed(2) + ' MB' : 'N/A' }}</span>
+            </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="created_at" label="创建时间" width="160">
+        <el-table-column prop="created_at" label="创建时间" width="170" align="center">
           <template #default="{ row }">
-            <span>{{ formatDateTime(row.created_at) }}</span>
+            <div class="time-cell">
+              <el-icon class="time-icon"><View /></el-icon>
+              <span>{{ formatDateTime(row.created_at) }}</span>
+            </div>
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button-group>
-              <el-button size="small" @click="handleView(row)">
+            <div class="action-buttons">
+              <el-button size="default" @click="handleView(row)" class="action-btn view-btn">
                 <el-icon><View /></el-icon>
                 查看
               </el-button>
-              <el-button size="small" @click="handleAddDocument(row)">
+              <el-button size="default" @click="handleAddDocument(row)" class="action-btn upload-btn">
                 <el-icon><Upload /></el-icon>
                 添加文档
               </el-button>
-              <el-button size="small" type="danger" @click="handleDelete(row)">
+              <el-button size="default" type="danger" @click="handleDelete(row)" class="action-btn delete-btn">
                 <el-icon><Delete /></el-icon>
               </el-button>
-            </el-button-group>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -257,38 +280,107 @@
     <el-dialog
       v-model="detailDialogVisible"
       :title="`知识库详情 - ${currentKB?.name}`"
-      width="600px"
+      width="900px"
       append-to-body
     >
-      <el-descriptions :column="2" border v-if="currentKB">
-        <el-descriptions-item label="索引名称">
-          {{ currentKB.name }}
-        </el-descriptions-item>
-        <el-descriptions-item label="文档数量">
-          {{ currentKB.num_documents || 0 }}
-        </el-descriptions-item>
-        <el-descriptions-item label="存储大小">
-          {{ currentKB.size_mb ? currentKB.size_mb.toFixed(2) + ' MB' : 'N/A' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="向量存储类型">
-          {{ currentKB.store_type || 'N/A' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="嵌入模型">
-          {{ currentKB.embedding_model || 'N/A' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="存储路径">
-          <el-text truncated>{{ currentKB.path || 'N/A' }}</el-text>
-        </el-descriptions-item>
-        <el-descriptions-item label="创建时间" span="2">
-          {{ formatDateTime(currentKB.created_at) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="更新时间" span="2">
-          {{ formatDateTime(currentKB.updated_at) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="描述" span="2">
-          {{ currentKB.description || '暂无描述' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div v-if="currentKB" class="detail-content">
+        <!-- 基本信息 -->
+        <div class="detail-section">
+          <h4 class="section-title">
+            <el-icon><Reading /></el-icon>
+            基本信息
+          </h4>
+          <el-descriptions :column="2" border class="detail-descriptions">
+            <el-descriptions-item label="索引名称" :span="1">
+              <el-tag type="primary" size="large">{{ currentKB.name }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="描述" :span="1">
+              {{ currentKB.description || '暂无描述' }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="detail-section">
+          <h4 class="section-title">
+            <el-icon><Document /></el-icon>
+            统计信息
+          </h4>
+          <el-descriptions :column="2" border class="detail-descriptions">
+            <el-descriptions-item label="文档数量">
+              <el-tag type="success" size="large">
+                <el-icon class="tag-icon"><Document /></el-icon>
+                {{ currentKB.doc_count || currentKB.num_documents || 0 }} 个
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="存储大小">
+              <el-tag type="info" size="large">
+                <el-icon class="tag-icon"><Connection /></el-icon>
+                {{ currentKB.size_mb ? currentKB.size_mb.toFixed(2) + ' MB' : 'N/A' }}
+              </el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <!-- 配置信息 -->
+        <div class="detail-section">
+          <h4 class="section-title">
+            <el-icon><Connection /></el-icon>
+            配置信息
+          </h4>
+          <el-descriptions :column="2" border class="detail-descriptions">
+            <el-descriptions-item label="向量维度" v-if="currentKB.metadata">
+              {{ currentKB.metadata.dimension || 'N/A' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="存储路径" :span="2">
+              <el-text truncated>{{ currentKB.path || 'N/A' }}</el-text>
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <!-- 分块配置 -->
+        <div class="detail-section" v-if="currentKB.metadata && (currentKB.metadata.chunk_size || currentKB.metadata.chunk_overlap || currentKB.metadata.splitter_type)">
+          <h4 class="section-title">
+            <el-icon><Upload /></el-icon>
+            分块配置
+          </h4>
+          <el-descriptions :column="2" border class="detail-descriptions">
+            <el-descriptions-item label="分块大小" v-if="currentKB.metadata.chunk_size">
+              {{ currentKB.metadata.chunk_size }} tokens
+            </el-descriptions-item>
+            <el-descriptions-item label="重叠大小" v-if="currentKB.metadata.chunk_overlap">
+              {{ currentKB.metadata.chunk_overlap }} tokens
+            </el-descriptions-item>
+            <el-descriptions-item label="分块器类型" :span="2" v-if="currentKB.metadata.splitter_type">
+              {{ getSplitterTypeName(currentKB.metadata.splitter_type) }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <!-- 时间信息 -->
+        <div class="detail-section">
+          <h4 class="section-title">
+            <el-icon><View /></el-icon>
+            时间信息
+          </h4>
+          <el-descriptions :column="2" border class="detail-descriptions">
+            <el-descriptions-item label="创建时间">
+              {{ formatDateTime(currentKB.created_at) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="更新时间">
+              {{ formatDateTime(currentKB.updated_at) }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="detailDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="handleAddDocument(currentKB)">
+          <el-icon><Upload /></el-icon>
+          添加文档
+        </el-button>
+      </template>
     </el-dialog>
   </el-dialog>
 </template>
@@ -302,7 +394,9 @@ import {
   View,
   Upload,
   Delete,
-  UploadFilled
+  UploadFilled,
+  Document,
+  Connection
 } from '@element-plus/icons-vue'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
 
@@ -504,9 +598,26 @@ const handleCreate = async () => {
 }
 
 // 查看知识库详情
-const handleView = (row) => {
+const handleView = async (row) => {
   currentKB.value = row
   detailDialogVisible.value = true
+
+  // 加载详细信息
+  await loadKnowledgeBaseDetail(row.name)
+}
+
+// 加载知识库详细信息
+const loadKnowledgeBaseDetail = async (indexName) => {
+  try {
+    const response = await knowledgeBaseApi.getKnowledgeBaseInfo(indexName)
+    if (response.code === 200 || response.status === 'success') {
+      // 更新currentKB为详细信息
+      currentKB.value = { ...currentKB.value, ...response.data }
+    }
+  } catch (error) {
+    console.error('加载知识库详情失败:', error)
+    // 不显示错误消息，因为基本信息已经显示
+  }
 }
 
 // 添加文档
@@ -645,6 +756,23 @@ const formatDateTime = (dateStr) => {
     minute: '2-digit'
   })
 }
+
+// 格式化数字（添加千分位）
+const formatNumber = (num) => {
+  if (!num) return '0'
+  return num.toLocaleString('zh-CN')
+}
+
+// 获取分块器类型名称
+const getSplitterTypeName = (type) => {
+  const typeMap = {
+    'recursive': '递归分块',
+    'character': '字符分块',
+    'markdown': 'Markdown分块',
+    'token': 'Token分块'
+  }
+  return typeMap[type] || type || 'N/A'
+}
 </script>
 
 <style scoped>
@@ -656,14 +784,154 @@ const formatDateTime = (dateStr) => {
 }
 
 .knowledge-list {
-  min-height: 300px;
+  min-height: 400px;
+  padding: 16px 0;
 }
 
-.index-name {
+.knowledge-table {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+:deep(.knowledge-table .el-table__header-wrapper) {
+  border-radius: 8px 8px 0 0;
+}
+
+:deep(.knowledge-table th.el-table__cell) {
+  border: none;
+}
+
+:deep(.knowledge-table tr:hover > td) {
+  background-color: #f5f7fa !important;
+}
+
+/* 索引名称单元格 */
+.index-name-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+}
+
+.index-name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.index-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.index-name-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  word-break: break-word;
+}
+
+/* 描述单元格 */
+.description-cell {
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+  padding: 0 8px;
+}
+
+/* 统计标签 */
+.stat-tag {
+  padding: 10px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.stat-tag .tag-icon {
+  font-size: 16px;
+  margin-right: 6px;
+}
+
+/* 存储大小单元格 */
+.size-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 14px;
   font-weight: 500;
+  color: #606266;
+}
+
+.size-icon {
+  font-size: 16px;
+  color: #409eff;
+}
+
+/* 时间单元格 */
+.time-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #909399;
+}
+
+.time-icon {
+  font-size: 14px;
+  color: #909399;
+}
+
+/* 操作按钮 */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.view-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: white;
+}
+
+.view-btn:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%);
+}
+
+.upload-btn {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  border: none;
+  color: white;
+}
+
+.upload-btn:hover {
+  background: linear-gradient(135deg, #e078eb 0%, #d64556 100%);
+}
+
+.delete-btn {
+  padding: 8px 12px;
+}
+
+.delete-btn:hover {
+  background-color: #f56c6c;
+  border-color: #f56c6c;
 }
 
 .upload-area {
@@ -702,6 +970,75 @@ const formatDateTime = (dateStr) => {
 :deep(.el-upload__text) {
   font-size: 14px;
   color: #606266;
+}
+
+/* 详情对话框样式 */
+.detail-content {
+  padding: 8px 0;
+}
+
+.detail-section {
+  margin-bottom: 28px;
+}
+
+.detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.section-title .el-icon {
+  font-size: 18px;
+}
+
+.detail-descriptions {
+  margin-top: 0;
+}
+
+:deep(.detail-descriptions .el-descriptions__label) {
+  font-weight: 600;
+  background-color: #f5f7fa !important;
+  color: #303133;
+  width: 120px;
+}
+
+:deep(.detail-descriptions .el-descriptions__body) {
+  background-color: #ffffff;
+}
+
+:deep(.detail-descriptions .el-descriptions__cell) {
+  padding: 16px 20px;
+  line-height: 1.8;
+  font-size: 14px;
+}
+
+:deep(.detail-descriptions .el-descriptions__content) {
+  color: #606266;
+}
+
+.tag-icon {
+  margin-right: 6px;
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+:deep(.el-tag--large) {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 :deep(.el-upload__text em) {
