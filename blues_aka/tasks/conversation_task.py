@@ -39,7 +39,7 @@ def update_conversation_stats_async(conversation_id: int) -> bool:
     """
     异步更新对话统计信息
 
-    本函数用于在流式响应完成后更新对话的统计数据（消息数量和最后消息时间）。
+    本函数用于在流式响应完成后更新对话的统计数据（消息数量、Token数量和最后消息时间）。
     设计为异步执行，不会阻塞主流程或流式响应。
 
     Args:
@@ -51,7 +51,8 @@ def update_conversation_stats_async(conversation_id: int) -> bool:
             - False: 更新失败（对话不存在或数据库错误）
 
     Note:
-        - 查询并更新指定对话的消息数量和最后消息时间
+        - 查询并更新指定对话的消息数量、Token数量和最后消息时间
+        - Token数量通过估算消息内容长度计算（1 token ≈ 2 characters）
         - 如果对话不存在，记录警告日志并返回False
         - 如果数据库操作失败，记录错误日志并返回False
         - 失败不影响主流程，只记录日志
@@ -83,9 +84,17 @@ def update_conversation_stats_async(conversation_id: int) -> bool:
         message_count = Message.query.filter_by(conversation_id=conversation_id).count()
 
         # ============================================================
+        # 步骤2.5: 计算Token总数
+        # ============================================================
+        # 获取所有消息并估算token数量（1 token ≈ 2 characters，保守估计）
+        messages = Message.query.filter_by(conversation_id=conversation_id).all()
+        total_tokens = sum(len(msg.content) // 2 for msg in messages if msg.content)
+
+        # ============================================================
         # 步骤3: 更新对话统计信息
         # ============================================================
         conversation.message_count = message_count
+        conversation.token_count = total_tokens
         conversation.last_message_at = func.now()
 
         # ============================================================
@@ -96,7 +105,7 @@ def update_conversation_stats_async(conversation_id: int) -> bool:
 
         logger.info(
             f"对话统计信息更新成功: conversation_id={conversation_id}, "
-            f"message_count={message_count}"
+            f"message_count={message_count}, token_count={total_tokens}"
         )
 
         return True

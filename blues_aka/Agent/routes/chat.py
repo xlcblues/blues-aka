@@ -298,7 +298,15 @@ def chat(conversation_id):
             # 清除历史缓存(因为添加了新消息)
             Message.invalidate_history_cache(conversation_id)
 
-            conversation.update_message_stats()
+            # 计算并更新token数量
+            token_count = len(response_content) // 2  # 估算token数量
+            conversation.update_message_stats(token=token_count)
+
+            # 增加智能体使用次数
+            if conversation.agent:
+                conversation.agent.increment_usage()
+                db.session.add(conversation.agent)
+
             db.session.commit()
 
             result = {
@@ -938,7 +946,15 @@ def regenerate_message(conversation_id):
             db.session.add(ai_message)
             db.session.commit()
 
-            conversation.update_message_stats()
+            # 计算并更新token数量
+            token_count = len(response_content) // 2  # 估算token数量
+            conversation.update_message_stats(token=token_count)
+
+            # 增加智能体使用次数
+            if conversation.agent:
+                conversation.agent.increment_usage()
+                db.session.add(conversation.agent)
+
             db.session.commit()
 
             return success(data={

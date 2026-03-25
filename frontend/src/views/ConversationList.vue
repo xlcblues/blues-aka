@@ -68,11 +68,17 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="消息统计" width="150" align="center">
+        <el-table-column label="统计信息" width="200" align="center">
           <template #default="{ row }">
-            <div class="stats-cell">
-              <el-icon><ChatLineRound /></el-icon>
-              <span>{{ row.message_count || 0 }} 条</span>
+            <div class="stats-container">
+              <div class="stats-item">
+                <el-icon class="stats-icon"><ChatLineRound /></el-icon>
+                <span class="stats-label">{{ row.message_count || 0 }} 条</span>
+              </div>
+              <div class="stats-item">
+                <el-icon class="stats-icon"><Tickets /></el-icon>
+                <span class="stats-label">{{ formatTokenCount(row.token_count || 0) }}</span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -85,12 +91,20 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="last_message_at" label="最后消息" width="180">
+        <el-table-column prop="last_message_at" label="最后消息" width="200">
           <template #default="{ row }">
             <div class="time-cell">
-              <span class="time-icon">{{ row.last_message_at ? '🎸' : '😴' }}</span>
+              <span class="time-icon">{{ getActivityEmoji(row) }}</span>
               <span v-if="row.last_message_at">{{ formatTime(row.last_message_at) }}</span>
               <span v-else class="no-message">暂无消息</span>
+              <el-tag
+                v-if="row.last_message_at && getActivityLevel(row)"
+                :type="getActivityLevel(row)"
+                size="small"
+                class="activity-tag"
+              >
+                {{ getActivityLabel(row) }}
+              </el-tag>
             </div>
           </template>
         </el-table-column>
@@ -233,6 +247,62 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { conversationApi, agentApi } from '../api/agent'
 import { formatTime } from '../utils/time'
 import { getErrorMessage } from '../utils/errorHandler'
+
+// 格式化Token数量
+const formatTokenCount = (tokens) => {
+  if (!tokens) return '0'
+  if (tokens >= 10000) {
+    return (tokens / 10000).toFixed(1) + 'w'
+  } else if (tokens >= 1000) {
+    return (tokens / 1000).toFixed(1) + 'k'
+  }
+  return tokens.toString()
+}
+
+// 计算对话活跃度
+const getActivityEmoji = (conversation) => {
+  if (!conversation.last_message_at) return '😴'
+
+  const now = new Date()
+  const lastMsg = new Date(conversation.last_message_at)
+  const hoursSince = (now - lastMsg) / (1000 * 60 * 60)
+
+  if (hoursSince < 1) return '🔥' // 1小时内
+  if (hoursSince < 24) return '🎸' // 24小时内
+  if (hoursSince < 72) return '📱' // 3天内
+  if (hoursSince < 168) return '💤' // 7天内
+  return '😴' // 7天以上
+}
+
+// 获取活跃度级别
+const getActivityLevel = (conversation) => {
+  if (!conversation.last_message_at) return null
+
+  const now = new Date()
+  const lastMsg = new Date(conversation.last_message_at)
+  const hoursSince = (now - lastMsg) / (1000 * 60 * 60)
+
+  if (hoursSince < 1) return 'danger' // 非常活跃
+  if (hoursSince < 24) return 'warning' // 活跃
+  if (hoursSince < 72) return 'success' // 一般
+  if (hoursSince < 168) return 'info' // 不活跃
+  return null // 长期未使用
+}
+
+// 获取活跃度标签
+const getActivityLabel = (conversation) => {
+  if (!conversation.last_message_at) return null
+
+  const now = new Date()
+  const lastMsg = new Date(conversation.last_message_at)
+  const hoursSince = (now - lastMsg) / (1000 * 60 * 60)
+
+  if (hoursSince < 1) return '刚刚'
+  if (hoursSince < 24) return '24h内'
+  if (hoursSince < 72) return '3天内'
+  if (hoursSince < 168) return '7天内'
+  return null
+}
 
 const router = useRouter()
 
@@ -699,16 +769,51 @@ onMounted(() => {
   font-weight: 500;
 }
 
+/* 统计信息容器 */
+.stats-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.stats-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #606266;
+}
+
+.stats-icon {
+  font-size: 14px;
+  color: #909399;
+}
+
+.stats-label {
+  font-weight: 500;
+  color: #303133;
+}
+
 .time-cell {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
   color: #606266;
+  flex-wrap: wrap;
 }
 
 .time-icon {
   font-size: 16px;
+}
+
+.activity-tag {
+  margin-left: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  height: 18px;
+  line-height: 14px;
 }
 
 .no-message {
