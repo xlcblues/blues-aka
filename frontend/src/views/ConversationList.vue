@@ -11,7 +11,7 @@
       <div class="header-right">
         <el-radio-group v-model="statusFilter" @change="fetchConversations" class="status-selector" size="default">
           <el-radio-button label="active">
-            <el-icon><Clock /></el-icon>
+            <el-icon><ChatDotRound /></el-icon>
             <span>进行中</span>
           </el-radio-button>
           <el-radio-button label="archived">
@@ -36,6 +36,7 @@
         class="conversation-table"
         :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: '600' }"
         :empty-text="getEmptyText()"
+        :row-class-name="getRowClassName"
       >
         <el-table-column prop="id" label="#" width="80" align="center">
           <template #default="{ row }">
@@ -57,7 +58,7 @@
 
         <el-table-column prop="title" label="对话标题" min-width="250">
           <template #default="{ row }">
-            <span class="title-text">{{ row.title }}</span>
+            <span class="title-text" :class="{ 'archived-text': row.status === 'archived' }">{{ row.title }}</span>
           </template>
         </el-table-column>
 
@@ -103,12 +104,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="300" fixed="right" align="center">
+        <el-table-column label="操作" width="350" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
-              <el-button type="primary" size="small" @click="openConversation(row)" link>
+              <el-button
+                type="primary"
+                size="small"
+                @click="openConversation(row)"
+                link
+                :disabled="row.status === 'archived'"
+              >
                 <el-icon><ChatDotRound /></el-icon>
-                进入对话
+                {{ row.status === 'archived' ? '已归档' : '进入对话' }}
               </el-button>
               <el-divider direction="vertical" />
               <el-button type="primary" size="small" @click="editConversation(row)" link>
@@ -119,14 +126,13 @@
               <el-button
                 type="warning"
                 size="small"
-                @click="archiveConversation(row)"
+                @click="toggleArchive(row)"
                 link
-                v-if="row.status === 'active'"
               >
                 <el-icon><FolderOpened /></el-icon>
-                归档
+                {{ row.status === 'active' ? '归档' : '取消归档' }}
               </el-button>
-              <el-divider direction="vertical" v-if="row.status === 'active'" />
+              <el-divider direction="vertical" />
               <el-button type="danger" size="small" @click="deleteConversation(row)" link>
                 <el-icon><Delete /></el-icon>
                 删除
@@ -314,32 +320,67 @@ const showCreateDialog = async () => {
 
 // 打开对话
 const openConversation = (conversation) => {
+  // 如果对话已归档，提示用户先取消归档
+  if (conversation.status === 'archived') {
+    ElMessage({
+      message: '🚫 该对话已归档，请先取消归档后再进行对话',
+      type: 'warning',
+      duration: 3000,
+      showClose: true
+    })
+    return
+  }
+
   router.push({
     name: 'Chat',
     query: { conversationId: conversation.id }
   })
 }
 
-// 归档对话
-const archiveConversation = async (conversation) => {
+// 切换对话归档状态
+const toggleArchive = async (conversation) => {
+  const isArchiving = conversation.status === 'active'
+
   try {
     await ElMessageBox.confirm(
-      `确定要归档对话 "${conversation.title}" 吗？`,
-      '确认归档',
+      isArchiving
+        ? `📦 确定要归档对话 "${conversation.title}" 吗？\n\n⚠️ 归档后将不会出现在"进行中"列表中，但可以随时恢复。`
+        : `✨ 确定要取消归档对话 "${conversation.title}" 吗？\n\n📌 取消归档后，该对话将重新出现在"进行中"列表中。`,
+      isArchiving ? '归档对话确认' : '取消归档对话确认',
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info'
+        confirmButtonText: isArchiving ? '📦 确认归档' : '✅ 确认恢复',
+        cancelButtonText: '❌ 取消操作',
+        type: isArchiving ? 'warning' : 'success',
+        dangerouslyUseHTMLString: false,
+        center: true
       }
     )
 
     await conversationApi.archiveConversation(conversation.id)
-    ElMessage.success('归档成功')
+    ElMessage({
+      message: isArchiving
+        ? `📦 对话 "${conversation.title}" 归档成功！`
+        : `✅ 对话 "${conversation.title}" 已恢复到"进行中"列表！`,
+      type: 'success',
+      duration: 3000,
+      showClose: true
+    })
     fetchConversations()
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('归档失败:', error)
-      ElMessage.error(getErrorMessage(error))
+    if (error === 'cancel' || error === 'close') {
+      ElMessage({
+        message: '🚫 操作已取消',
+        type: 'info',
+        duration: 2000
+      })
+    } else {
+      console.error('操作失败:', error)
+      ElMessage({
+        message: `❌ 操作失败: ${error.backendMessage || error.message || '未知错误'}`,
+        type: 'error',
+        duration: 5000,
+        showClose: true
+      })
     }
   }
 }
@@ -361,22 +402,40 @@ const editConversation = async (conversation) => {
 const deleteConversation = async (conversation) => {
   try {
     await ElMessageBox.confirm(
-      `确定要删除对话 "${conversation.title}" 吗？此操作不可恢复。`,
-      '确认删除',
+      `🚨 确定要删除对话 "${conversation.title}" 吗？\n\n⚠️ 此操作不可恢复，请谨慎操作！`,
+      '删除对话确认',
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
+        confirmButtonText: '🗑️ 确认删除',
+        cancelButtonText: '❌ 取消操作',
+        type: 'error',
+        dangerouslyUseHTMLString: false,
+        center: true
       }
     )
 
     await conversationApi.deleteConversation(conversation.id)
-    ElMessage.success('删除成功')
+    ElMessage({
+      message: `🗑️ 对话 "${conversation.title}" 删除成功！`,
+      type: 'success',
+      duration: 3000,
+      showClose: true
+    })
     fetchConversations()
   } catch (error) {
-    if (error !== 'cancel') {
+    if (error === 'cancel' || error === 'close') {
+      ElMessage({
+        message: '🚫 删除操作已取消',
+        type: 'info',
+        duration: 2000
+      })
+    } else {
       console.error('删除失败:', error)
-      ElMessage.error(getErrorMessage(error))
+      ElMessage({
+        message: `❌ 删除失败: ${error.backendMessage || error.message || '未知错误'}`,
+        type: 'error',
+        duration: 5000,
+        showClose: true
+      })
     }
   }
 }
@@ -440,6 +499,11 @@ const getEmptyText = () => {
     return '暂无归档对话 💾'
   }
   return '暂无对话 🎵'
+}
+
+// 获取行的类名
+const getRowClassName = ({ row }) => {
+  return row.status === 'archived' ? 'archived-row' : ''
 }
 
 onMounted(() => {
@@ -567,6 +631,16 @@ onMounted(() => {
   transition: background-color 0.25s ease;
 }
 
+/* 已归档对话行样式 */
+.conversation-table :deep(.el-table__row.archived-row) {
+  background-color: #fafafa;
+  opacity: 0.7;
+}
+
+.conversation-table :deep(.el-table__row.archived-row:hover) {
+  background-color: #f0f0f0 !important;
+}
+
 /* 表格内容样式 */
 .conversation-id {
   color: #909399;
@@ -602,6 +676,11 @@ onMounted(() => {
   font-weight: 600;
   font-size: 15px;
   color: #303133;
+}
+
+.archived-text {
+  color: #909399;
+  font-style: italic;
 }
 
 .description-text {
@@ -651,8 +730,13 @@ onMounted(() => {
   font-size: 13px;
 }
 
-.action-buttons .el-button:hover {
+.action-buttons .el-button:hover:not(.is-disabled) {
   transform: scale(1.05);
+}
+
+.action-buttons .el-button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .action-buttons .el-divider--vertical {

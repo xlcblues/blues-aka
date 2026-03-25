@@ -152,7 +152,7 @@
       width="800px"
       @close="resetForm"
     >
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入智能体名称" maxlength="100" show-word-limit />
         </el-form-item>
@@ -200,14 +200,6 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="温度" prop="temperature">
-          <el-slider v-model="form.temperature" :min="0" :max="2" :step="0.1" show-input />
-        </el-form-item>
-
-        <el-form-item label="最大Token" prop="max_tokens">
-          <el-input-number v-model="form.max_tokens" :min="100" :max="32000" :step="100" />
-        </el-form-item>
-
         <el-form-item label="是否公开" prop="is_public">
           <el-switch v-model="form.is_public" />
           <span class="form-tip">公开后其他用户也可以使用此智能体</span>
@@ -215,7 +207,44 @@
 
         <el-divider content-position="left">
           <el-icon><Setting /></el-icon>
-          高级配置
+          模型参数配置
+        </el-divider>
+
+        <el-form-item label="温度" prop="temperature" class="slider-form-item">
+          <el-slider
+            v-model="form.temperature"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            show-input
+            :marks="{0: '精确', 1: '平衡', 2: '创意'}"
+          />
+        </el-form-item>
+
+        <el-form-item label="最大Token数" prop="max_tokens">
+          <el-input-number
+            v-model="form.max_tokens"
+            :min="100"
+            :max="32000"
+            :step="100"
+            :step-strictly="true"
+          />
+        </el-form-item>
+
+        <el-form-item label="核采样 (Top P)" prop="top_p" class="slider-form-item">
+          <el-slider
+            v-model="form.top_p"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            show-input
+            :marks="{0: '保守', 0.5: '平衡', 1: '开放'}"
+          />
+        </el-form-item>
+
+        <el-divider content-position="left">
+          <el-icon><Connection /></el-icon>
+          功能增强配置
         </el-divider>
 
         <el-form-item label="启用联网搜索" prop="enable_web_search">
@@ -235,10 +264,98 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="showTestDialog" :disabled="!form.name || !form.system_prompt">
+          <el-icon><ChatDotRound /></el-icon>
+          测试智能体
+        </el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitting">
           {{ isEdit ? '保存' : '创建' }}
         </el-button>
       </template>
+    </el-dialog>
+
+    <!-- 测试智能体对话框 -->
+    <el-dialog
+      v-model="testDialogVisible"
+      title="测试智能体"
+      width="900px"
+      @close="closeTestDialog"
+    >
+      <div class="test-dialog-content">
+        <!-- 测试配置信息 -->
+        <div class="test-config">
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item label="智能体名称">{{ form.name || '未命名' }}</el-descriptions-item>
+            <el-descriptions-item label="模型">{{ form.model }}</el-descriptions-item>
+            <el-descriptions-item label="温度">{{ form.temperature }}</el-descriptions-item>
+            <el-descriptions-item label="最大Token">{{ form.max_tokens }}</el-descriptions-item>
+          </el-descriptions>
+        </div>
+
+        <!-- 测试对话区域 -->
+        <div class="test-chat-area">
+          <div class="test-messages" ref="testMessagesContainer">
+            <div v-if="testMessages.length === 0" class="empty-tip">
+              <el-icon size="48"><ChatDotRound /></el-icon>
+              <p>发送消息开始测试智能体效果</p>
+            </div>
+            <div v-for="msg in testMessages" :key="msg.id" :class="['message', msg.role]">
+              <div class="message-avatar">
+                <el-avatar v-if="msg.role === 'user'" :size="36">
+                  <el-icon><User /></el-icon>
+                </el-avatar>
+                <el-avatar v-else :size="36" :src="form.avatar">
+                  {{ form.name ? form.name.charAt(0) : 'AI' }}
+                </el-avatar>
+              </div>
+              <div class="message-content">
+                <div class="message-text" v-html="renderMarkdown(msg.content)"></div>
+                <div class="message-time">{{ formatTime(msg.created_at) }}</div>
+              </div>
+            </div>
+            <!-- 流式输出中的消息 -->
+            <div v-if="isStreaming" class="message assistant">
+              <div class="message-avatar">
+                <el-avatar :size="36" :src="form.avatar">
+                  {{ form.name ? form.name.charAt(0) : 'AI' }}
+                </el-avatar>
+              </div>
+              <div class="message-content">
+                <div class="message-text" v-html="renderMarkdown(testStreamingContent)"></div>
+                <div class="streaming-indicator">
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 输入区域 -->
+          <div class="test-input-area">
+            <el-input
+              v-model="testInput"
+              type="textarea"
+              :rows="3"
+              placeholder="输入测试消息..."
+              :disabled="isStreaming"
+              @keydown.enter.ctrl="sendTestMessage"
+            />
+            <div class="input-actions">
+              <span class="input-tip">Ctrl + Enter 发送</span>
+              <el-button
+                type="primary"
+                @click="sendTestMessage"
+                :loading="isStreaming"
+                :disabled="!testInput.trim()"
+              >
+                <el-icon><Position /></el-icon>
+                发送
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
     </el-dialog>
 
     <!-- 查看智能体详情对话框 -->
@@ -289,11 +406,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { agentApi } from '../api/agent'
+import { agentApi, conversationApi } from '../api/agent'
 import { formatTime } from '../utils/time'
+import { renderMarkdown } from '../utils/markdown'
+
+// 图已在模板中使用，无需显式导入
 
 const router = useRouter()
 
@@ -308,9 +428,20 @@ const viewMode = ref('all') // 'all' | 'mine' | 'public'
 // 对话框状态
 const dialogVisible = ref(false)
 const detailVisible = ref(false)
+const testDialogVisible = ref(false)
 const isEdit = ref(false)
 const submitting = ref(false)
 const currentAgent = ref(null)
+
+// 测试相关状态
+const testMessages = ref([])
+const testInput = ref('')
+const testStreamingContent = ref('')
+const isStreaming = ref(false)
+const testMessagesContainer = ref(null)
+const testAbortController = ref(null)
+const testTempAgentId = ref(null)  // 临时智能体ID
+const testConversationId = ref(null)  // 临时对话ID
 
 // 表单数据
 const form = ref({
@@ -472,7 +603,11 @@ const resetForm = () => {
     temperature: 0.7,
     max_tokens: 2000,
     top_p: 1.0,
-    is_public: false
+    is_public: false,
+    // 新增字段
+    enable_web_search: false,
+    enable_rag: false,
+    rag_index_name: ''
   }
   formRef.value?.resetFields()
 }
@@ -483,6 +618,219 @@ const startChat = (agent) => {
     name: 'Chat',
     query: { agentId: agent.id }
   })
+}
+
+// ========== 测试功能相关方法 ==========
+
+// 显示测试对话框
+const showTestDialog = () => {
+  testDialogVisible.value = true
+  testMessages.value = []
+  testInput.value = ''
+  testStreamingContent.value = ''
+}
+
+// 关闭测试对话框
+const closeTestDialog = async () => {
+  testDialogVisible.value = false
+  // 取消正在进行的流式请求
+  if (testAbortController.value) {
+    testAbortController.value.abort()
+    testAbortController.value = null
+  }
+
+  // 删除临时对话
+  if (testConversationId.value) {
+    try {
+      await conversationApi.deleteConversation(testConversationId.value)
+      console.log('已删除临时对话:', testConversationId.value)
+    } catch (error) {
+      console.warn('删除临时对话失败:', error)
+    }
+    testConversationId.value = null
+  }
+
+  // 删除临时智能体
+  if (testTempAgentId.value) {
+    try {
+      await agentApi.deleteAgent(testTempAgentId.value)
+      console.log('已删除临时智能体:', testTempAgentId.value)
+    } catch (error) {
+      console.warn('删除临时智能体失败:', error)
+    }
+    testTempAgentId.value = null
+  }
+
+  testMessages.value = []
+  testInput.value = ''
+  testStreamingContent.value = ''
+  isStreaming.value = false
+}
+
+// 发送测试消息
+const sendTestMessage = async () => {
+  if (!testInput.value.trim()) {
+    ElMessage.warning('请输入测试消息')
+    return
+  }
+
+  try {
+    // 如果是第一次测试，先创建临时智能体和对话
+    if (!testTempAgentId.value || !testConversationId.value) {
+      try {
+        // 1. 创建临时智能体
+        const tempAgentData = {
+          name: `[测试] ${form.value.name}`,
+          model: form.value.model,
+          system_prompt: form.value.system_prompt || '',
+          temperature: form.value.temperature || 0.7,
+          max_tokens: form.value.max_tokens || 2000,
+          top_p: form.value.top_p || 1.0,
+          prompt_mode: form.value.prompt_mode || 'default',
+          is_public: false  // 测试智能体不公开
+        }
+
+        // 只添加有值的可选字段
+        if (form.value.description) {
+          tempAgentData.description = form.value.description
+        }
+        if (form.value.avatar) {
+          tempAgentData.avatar = form.value.avatar
+        }
+
+        console.log('创建临时智能体，数据:', tempAgentData)
+
+        const agentResponse = await agentApi.createAgent(tempAgentData)
+        console.log('创建智能体响应:', agentResponse)
+
+        if (agentResponse.code === 200) {
+          testTempAgentId.value = agentResponse.data.id
+          console.log('创建临时智能体成功:', testTempAgentId.value)
+
+          // 2. 创建临时对话
+          const convResponse = await conversationApi.createConversation({
+            title: `测试: ${form.value.name}`,
+            agent_id: testTempAgentId.value
+          })
+          console.log('创建对话响应:', convResponse)
+
+          if (convResponse.code === 200) {
+            testConversationId.value = convResponse.data.id
+            console.log('创建临时对话成功:', testConversationId.value)
+          } else {
+            throw new Error(convResponse.message || '创建临时对话失败')
+          }
+        } else {
+          throw new Error(agentResponse.message || '创建临时智能体失败')
+        }
+      } catch (error) {
+        console.error('初始化测试环境失败:', error)
+        ElMessage.error('初始化测试环境失败: ' + (error.backendMessage || error.message || '未知错误'))
+        return
+      }
+    }
+
+    // 添加用户消息
+    const userMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: testInput.value,
+      created_at: new Date().toISOString()
+    }
+    testMessages.value.push(userMessage)
+
+    const messageContent = testInput.value
+    testInput.value = ''
+
+    // 滚动到底部
+    await nextTick()
+    if (testMessagesContainer.value) {
+      testMessagesContainer.value.scrollTop = testMessagesContainer.value.scrollHeight
+    }
+
+    // 开始流式响应
+    isStreaming.value = true
+    testStreamingContent.value = ''
+    testAbortController.value = new AbortController()
+
+    const token = localStorage.getItem('access_token')
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+
+    // 使用临时对话ID
+    const response = await fetch(`${apiBaseUrl}/chat/conversations/${testConversationId.value}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        content: messageContent,
+        stream: true
+      }),
+      signal: testAbortController.value.signal
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.message || '发送测试消息失败')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value)
+      const lines = chunk.split('\n')
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+
+            if (data.type === 'token' || data.type === 'content') {
+              testStreamingContent.value += data.content
+            } else if (data.type === 'end') {
+              // 流式输出结束
+              const assistantMessage = {
+                id: data.message_id || Date.now(),
+                role: 'assistant',
+                content: testStreamingContent.value,
+                created_at: new Date().toISOString()
+              }
+              testMessages.value.push(assistantMessage)
+              testStreamingContent.value = ''
+              isStreaming.value = false
+              testAbortController.value = null
+            } else if (data.type === 'error') {
+              ElMessage.error(data.message || '测试失败')
+              testStreamingContent.value = ''
+              isStreaming.value = false
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        }
+      }
+
+      // 滚动到底部
+      await nextTick()
+      if (testMessagesContainer.value) {
+        testMessagesContainer.value.scrollTop = testMessagesContainer.value.scrollHeight
+      }
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      ElMessage.info('已停止测试')
+    } else {
+      console.error('测试失败:', error)
+      ElMessage.error('测试失败: ' + (error.message || '未知错误'))
+    }
+    isStreaming.value = false
+    testStreamingContent.value = ''
+  }
 }
 
 onMounted(() => {
@@ -760,6 +1108,15 @@ onMounted(() => {
   color: #909399;
 }
 
+/* 滑块表单项样式 */
+:deep(.slider-form-item .el-form-item__content) {
+  line-height: normal;
+}
+
+:deep(.slider-form-item .el-slider) {
+  margin-bottom: 30px;
+}
+
 /* 表单对话框优化 */
 :deep(.el-dialog__header) {
   padding: 24px 24px 16px;
@@ -798,5 +1155,146 @@ onMounted(() => {
 :deep(.el-avatar) {
   border: 2px solid white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ========== 测试对话框样式 ========== */
+.test-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.test-config {
+  margin-bottom: 10px;
+}
+
+.test-chat-area {
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.test-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #f5f7fa;
+}
+
+.test-messages .empty-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #909399;
+}
+
+.test-messages .empty-tip p {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.test-messages .message {
+  display: flex;
+  margin-bottom: 20px;
+  gap: 12px;
+}
+
+.test-messages .message.user {
+  flex-direction: row-reverse;
+}
+
+.test-messages .message-avatar {
+  flex-shrink: 0;
+}
+
+.test-messages .message-content {
+  max-width: 70%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.test-messages .message.user .message-content {
+  align-items: flex-end;
+}
+
+.test-messages .message-text {
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.6;
+  word-break: break-word;
+  font-size: 14px;
+}
+
+.test-messages .message.user .message-text {
+  background: #409eff;
+  color: white;
+}
+
+.test-messages .message.assistant .message-text {
+  background: white;
+  color: #303133;
+  border: 1px solid #e4e7ed;
+}
+
+.test-messages .message-time {
+  font-size: 12px;
+  color: #909399;
+}
+
+.test-messages .streaming-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.test-messages .streaming-indicator .dot {
+  width: 8px;
+  height: 8px;
+  background: #409eff;
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.test-messages .streaming-indicator .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.test-messages .streaming-indicator .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+.test-input-area {
+  padding: 16px;
+  background: white;
+  border-top: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.test-input-area .input-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.test-input-area .input-tip {
+  font-size: 12px;
+  color: #909399;
 }
 </style>
