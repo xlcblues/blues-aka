@@ -164,9 +164,16 @@ class AgentManager:
 
                         # 检查是否过期
                         if self._is_cache_valid(created_at):
-                            self._cache_hits += 1
-                            logger.info(f"复用Agent实例 (agent_id={agent_id})")
-                            return agent
+                            # 检查配置是否发生变化
+                            if cached_key == config_key:
+                                self._cache_hits += 1
+                                logger.info(f"复用Agent实例 (agent_id={agent_id})")
+                                return agent
+                            else:
+                                # 配置已变化，删除旧缓存
+                                logger.info(f"Agent配置已变化 (agent_id={agent_id})，删除旧实例")
+                                del self._agents[cached_key]
+                                del self._config_keys[agent_id]
                         else:
                             # 过期，删除
                             del self._agents[cached_key]
