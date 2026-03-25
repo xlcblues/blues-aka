@@ -154,7 +154,7 @@
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持格式：PDF、TXT、Markdown、HTML、JSON，最大 16MB
+                支持格式：{{ supportedFormatsText }}，{{ fileSizeText }}
               </div>
             </template>
           </el-upload>
@@ -235,7 +235,7 @@
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持格式：PDF、TXT、Markdown、HTML、JSON，最大 16MB
+                支持格式：{{ supportedFormatsText }}，{{ fileSizeText }}
               </div>
             </template>
           </el-upload>
@@ -386,7 +386,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
@@ -399,6 +399,7 @@ import {
   Connection
 } from '@element-plus/icons-vue'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
+import { ragApi } from '../api/rag'
 
 const props = defineProps({
   visible: {
@@ -418,6 +419,10 @@ const dialogVisible = ref(false)
 const loading = ref(false)
 const knowledgeBases = ref([])
 const currentKB = ref(null)
+
+// 支持的文件格式
+const supportedFormats = ref([])
+const maxFileSize = ref(100) // 默认100MB
 
 // 创建知识库相关
 const createDialogVisible = ref(false)
@@ -468,6 +473,42 @@ watch(() => props.visible, (newVal) => {
 watch(dialogVisible, (newVal) => {
   emit('update:visible', newVal)
 })
+
+// 计算属性 - 格式化支持格式文本
+const supportedFormatsText = computed(() => {
+  if (supportedFormats.value.length === 0) {
+    return '加载中...'
+  }
+  const formatNames = supportedFormats.value.map(f => f.description || f.type)
+  return formatNames.join('、')
+})
+
+// 计算属性 - 格式化文件大小文本
+const fileSizeText = computed(() => {
+  return `最大 ${maxFileSize.value}MB`
+})
+
+// 加载支持的文件格式
+const loadSupportedFormats = async () => {
+  try {
+    const response = await ragApi.getSupportedFormats()
+    if (response.code === 200 && response.data) {
+      supportedFormats.value = response.data.formats || []
+      maxFileSize.value = response.data.max_file_size_mb || 100
+    }
+  } catch (error) {
+    console.error('获取支持的文件格式失败:', error)
+    // 使用默认值
+    supportedFormats.value = [
+      { extension: '.pdf', type: 'pdf', description: 'PDF文档' },
+      { extension: '.txt', type: 'text', description: '纯文本' },
+      { extension: '.md', type: 'markdown', description: 'Markdown' },
+      { extension: '.html', type: 'html', description: 'HTML' },
+      { extension: '.json', type: 'json', description: 'JSON' }
+    ]
+    maxFileSize.value = 100
+  }
+}
 
 // 加载知识库列表
 const loadKnowledgeBases = async () => {
@@ -773,6 +814,11 @@ const getSplitterTypeName = (type) => {
   }
   return typeMap[type] || type || 'N/A'
 }
+
+// 组件挂载时加载支持的文件格式
+onMounted(() => {
+  loadSupportedFormats()
+})
 </script>
 
 <style scoped>

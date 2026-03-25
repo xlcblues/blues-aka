@@ -121,14 +121,22 @@ router.beforeEach(async (to, from, next) => {
 
   // 如果需要管理员权限但用户不是管理员
   if (to.meta.requiresAdmin && isAuthenticated) {
-    // 如果还没有获取用户信息或管理员状态，先获取
-    if (!authStore.userId || authStore.isAdmin === undefined) {
+    console.log('🔍 访问管理员页面:', to.path)
+    console.log('🔍 当前状态:', {
+      userId: authStore.userId,
+      isAdmin: authStore.isAdmin,
+      username: authStore.username
+    })
+
+    // 如果还没有获取用户ID或需要验证管理员状态，先获取
+    if (!authStore.userId) {
       try {
-        console.log('正在获取用户信息...')
+        console.log('📡 正在获取用户信息...')
         const userData = await authStore.fetchCurrentUser()
-        console.log('用户信息获取成功:', userData)
+        console.log('✅ 用户信息获取成功:', userData)
+        console.log('✅ 更新后的isAdmin:', authStore.isAdmin)
       } catch (error) {
-        console.error('获取用户信息失败:', error)
+        console.error('❌ 获取用户信息失败:', error)
         // token过期或无效，清除认证状态并跳转到登录页
         authStore.clearAuth()
         next('/login')
@@ -137,11 +145,14 @@ router.beforeEach(async (to, from, next) => {
     }
 
     // 检查是否是管理员
+    console.log('🔑 检查管理员权限，isAdmin =', authStore.isAdmin)
     if (!authStore.isAdmin) {
-      console.log('非管理员用户尝试访问管理员页面')
+      console.log('⛔ 非管理员用户尝试访问管理员页面，重定向到 /agents')
       next('/agents') // 重定向到智能体列表页
       return
     }
+
+    console.log('✅ 管理员权限验证通过')
   }
 
   // 如果已登录，访问登录或注册页面则重定向到智能体列表

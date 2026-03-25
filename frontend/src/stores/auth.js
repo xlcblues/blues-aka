@@ -34,14 +34,25 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const setUser = (userData) => {
+    console.log('🔧 setUser调用，输入数据:', userData)
+    console.log('🔧 userData.is_admin:', userData.is_admin, '类型:', typeof userData.is_admin)
+
     username.value = userData.username
     userId.value = userData.id || ''
-    isAdmin.value = userData.is_admin || false
+
+    // 关键：处理is_admin的值
+    const adminValue = userData.is_admin
+    console.log('🔧 设置前的adminValue:', adminValue, '布尔转换:', !!adminValue)
+
+    isAdmin.value = adminValue || false
+    console.log('🔧 isAdmin.value最终值:', isAdmin.value, '类型:', typeof isAdmin.value)
+
     localStorage.setItem('username', userData.username)
     if (userData.id) {
       localStorage.setItem('user_id', userData.id)
     }
     localStorage.setItem('is_admin', userData.is_admin ? 'true' : 'false')
+    console.log('🔧 localStorage已设置 is_admin =', localStorage.getItem('is_admin'))
   }
 
   const login = async (credentials) => {
@@ -54,11 +65,12 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (isSuccess && data && data.access_token && data.refresh_token) {
         setTokens(data)
-        setUser({ username: credentials.username })
+        // 先不设置用户信息，等待fetchCurrentUser获取完整信息
+        // setUser({ username: credentials.username })
         isLoggedIn.value = true
         localStorage.setItem('isLoggedIn', 'true')
 
-        // 登录成功后获取完整的用户信息
+        // 登录成功后获取完整的用户信息（包含is_admin）
         await fetchCurrentUser()
 
         return { success: true, data: data }
@@ -153,18 +165,26 @@ export const useAuthStore = defineStore('auth', () => {
   // 获取当前用户信息
   const fetchCurrentUser = async () => {
     try {
+      console.log('📡 调用 /auth/me API...')
       const response = await authApi.getCurrentUser()
+      console.log('📡 API响应:', response)
+
       if (response.code === 200 || response.status === 'success') {
         const userData = response.data
+        console.log('👤 用户数据:', userData)
+        console.log('👤 is_admin字段值:', userData.is_admin, '类型:', typeof userData.is_admin)
+
         setUser({
           id: userData.id,
           username: userData.username,
           is_admin: userData.is_admin
         })
+
+        console.log('✅ setUser后的isAdmin:', isAdmin.value)
         return userData
       }
     } catch (error) {
-      console.error('获取用户信息失败:', error)
+      console.error('❌ 获取用户信息失败:', error)
       // 如果获取失败，可能token已过期，清除认证状态
       if (error.response && error.response.status === 401) {
         clearAuth()

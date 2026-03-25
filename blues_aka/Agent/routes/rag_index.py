@@ -13,8 +13,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from blues_aka.common.exceptions import Exceptions
-from blues_aka.common.response_handler import handle_api_response
-from blues_aka.common.auth import requires_admin
+from blues_aka.common.responseapi import handle_api_response
 from blues_aka.rag.index_manager import IndexManager
 from blues_aka.rag.embeddings import get_embeddings
 
@@ -268,7 +267,6 @@ def get_index_versions(index_name: str):
 @rag_index_bp.route('/<index_name>/rebuild', methods=['POST'])
 @jwt_required()
 @handle_api_response
-@requires_admin
 def rebuild_index(index_name: str):
     """重建索引
 
@@ -294,6 +292,35 @@ def rebuild_index(index_name: str):
             }
         }
     """
+    from blues_aka.user.models.user import User
+    from langchain_core.documents import Document
+
+    data = request.get_json() or {}
+    description = data.get('description', '')
+    documents_data = data.get('documents', [])
+
+    # 转换为Document对象
+    documents = [
+        Document(
+            page_content=doc.get('content', ''),
+            metadata=doc.get('metadata', {})
+        )
+        for doc in documents_data
+    ] if documents_data else []
+
+    # 获取当前用户
+    user_id = get_jwt_identity()
+    current_user = User.query.get(user_id)
+
+    # 检查权限（只有管理员可以重建索引）
+    if not current_user.is_admin:
+        raise Exceptions.Auth.forbidden('只有管理员可以重建索引')
+
+    manager = IndexManager()
+    embeddings = get_embeddings()
+
+    logger.info(f"用户 {user_id} 重建索引: {index_name}")
+
     try:
         from blues_aka.user.models.user import User
         from langchain_core.documents import Document
@@ -345,7 +372,6 @@ def rebuild_index(index_name: str):
 @rag_index_bp.route('/<index_name>/update', methods=['PUT'])
 @jwt_required()
 @handle_api_response
-@requires_admin
 def update_index_incremental(index_name: str):
     """增量更新索引
 
@@ -401,6 +427,10 @@ def update_index_incremental(index_name: str):
         user_id = get_jwt_identity()
         current_user = User.query.get(user_id)
 
+        # 检查权限（只有管理员可以更新索引）
+        if not current_user.is_admin:
+            raise Exceptions.Auth.forbidden('只有管理员可以更新索引')
+
         manager = IndexManager()
         embeddings = get_embeddings()
 
@@ -437,7 +467,6 @@ def update_index_incremental(index_name: str):
 @rag_index_bp.route('/<index_name>', methods=['DELETE'])
 @jwt_required()
 @handle_api_response
-@requires_admin
 def delete_index(index_name: str):
     """删除索引
 
@@ -462,6 +491,10 @@ def delete_index(index_name: str):
         # 获取当前用户
         user_id = get_jwt_identity()
         current_user = User.query.get(user_id)
+
+        # 检查权限（只有管理员可以删除索引）
+        if not current_user.is_admin:
+            raise Exceptions.Auth.forbidden('只有管理员可以删除索引')
 
         manager = IndexManager()
 

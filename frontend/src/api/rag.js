@@ -60,6 +60,11 @@ export const ragApi = {
     return api.get('/conversation/rag/metrics', {
       params: { summary }
     })
+  },
+
+  // 获取支持的文件格式
+  getSupportedFormats() {
+    return api.get('/conversation/rag/supported-formats')
   }
 }
 

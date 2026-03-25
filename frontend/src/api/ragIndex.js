@@ -13,7 +13,7 @@ const api = axios.create({
 // 请求拦截器 - 添加认证token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -29,17 +29,65 @@ api.interceptors.response.use(
   (response) => {
     return response.data
   },
-  (error) => {
-    const message = error.response?.data?.message || error.message || '请求失败'
+  async (error) => {
+    console.error('RAG Index API Error:', error)
 
-    // 处理特殊错误码
-    if (error.response?.status === 401) {
-      // 未授权,清除token并跳转登录
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+    const originalRequest = error.config
+
+    // 如果收到401响应且未尝试过刷新token
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        // 尝试刷新token
+        const refreshToken = localStorage.getItem('refresh_token')
+        if (!refreshToken) {
+          throw new Error('No refresh token available')
+        }
+
+        const refreshApi = axios.create({
+          baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
+          timeout: 10000
+        })
+
+        const response = await refreshApi.post('/auth/refresh', {}, {
+          headers: {
+            'Authorization': `Bearer ${refreshToken}`
+          }
+        })
+
+        if (response.data && response.data.access_token) {
+          const newAccessToken = response.data.access_token
+          localStorage.setItem('access_token', newAccessToken)
+
+          // 更新请求头并重试原始请求
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+          return api(originalRequest)
+        }
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError)
+
+        // 刷新失败，清除所有认证状态并跳转登录
+        localStorage.removeItem('isLoggedIn')
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('username')
+        localStorage.removeItem('is_admin')
+        localStorage.removeItem('user_id')
+
+        window.location.replace('/login')
+        return Promise.reject(refreshError)
+      }
     }
 
-    return Promise.reject(new Error(message))
+    // 提取后端返回的错误信息
+    if (error.response && error.response.data) {
+      const errorData = error.response.data
+      error.backendMessage = errorData.message || errorData.error_code || '服务器错误'
+      error.backendErrorCode = errorData.code || errorData.error_code
+    }
+
+    return Promise.reject(error)
   }
 )
 
