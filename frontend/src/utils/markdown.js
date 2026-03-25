@@ -157,8 +157,21 @@ export function renderMarkdown(text) {
     return `<${tag} class="md-list">${match}</${tag}>`
   })
 
-  // ========== 第四阶段：段落处理 ==========
-  // 保护 HTML 块
+  // ========== 第四阶段：先恢复代码块和公式块 ==========
+  html = html.replace(/__BLOCK_(\d+)__/g, (match, index) => {
+    const block = protectedBlocks[index]
+    if (block.type === 'code-block') {
+      return `<pre class="md-code-block" data-language="${block.lang}"><code class="language-${block.lang}">${block.content}</code></pre>`
+    } else if (block.type === 'math-block') {
+      return `<div class="math-block">${block.content}</div>`
+    } else if (block.type === 'math-inline') {
+      return `<span class="math-inline">${block.content}</span>`
+    }
+    return match  // html-block 类型保持原样，后续处理
+  })
+
+  // ========== 第五阶段：段落处理 ==========
+  // 保护 HTML 块（现在只保护真正的HTML，代码块和公式已经恢复）
   html = html.replace(/<(h[1-6]|ul|ol|li|blockquote|table|div|hr|pre)[^>]*>[\s\S]*?<\/\1>/gi, (match) => {
     protectedBlocks.push({
       type: 'html-block',
@@ -197,12 +210,6 @@ export function renderMarkdown(text) {
     const block = protectedBlocks[index]
     if (block.type === 'html-block') {
       return block.content
-    } else if (block.type === 'code-block') {
-      return `<pre class="md-code-block" data-language="${block.lang}"><code class="language-${block.lang}">${block.content}</code></pre>`
-    } else if (block.type === 'math-block') {
-      return `<div class="math-block">${block.content}</div>`
-    } else if (block.type === 'math-inline') {
-      return `<span class="math-inline">${block.content}</span>`
     }
     return match
   })

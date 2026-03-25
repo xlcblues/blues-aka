@@ -1603,12 +1603,12 @@ watch(conversationId, async (newId, oldId) => {
 
 /* ========== 段落 ========== */
 .markdown-content :deep(.md-paragraph) {
-  margin: 0.8em 0;
-  line-height: 1.7;
+  margin: 0.05em 0;
+  line-height: 1.5;
   color: #27272a;
 }
 
-/* ========== 标题（遵循 Markdown 标准间距）========== */
+/* ========== 标题（间距与正文接近）========== */
 .markdown-content :deep(h1),
 .markdown-content :deep(h2),
 .markdown-content :deep(h3),
@@ -1617,21 +1617,23 @@ watch(conversationId, async (newId, oldId) => {
 .markdown-content :deep(h6) {
   font-weight: 600;
   color: #18181b;
-  line-height: 1.25;
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
+  line-height: 1.3;
+  margin-top: 0.08em;
+  margin-bottom: 0.08em;
 }
 
 .markdown-content :deep(h1) {
   font-size: 2em;
   border-bottom: 1px solid #e4e4e7;
-  padding-bottom: 0.3em;
+  padding-bottom: 0.05em;
+  margin-bottom: 0.05em;
 }
 
 .markdown-content :deep(h2) {
   font-size: 1.5em;
   border-bottom: 1px solid #e4e4e7;
-  padding-bottom: 0.3em;
+  padding-bottom: 0.05em;
+  margin-bottom: 0.05em;
 }
 
 .markdown-content :deep(h3) {
@@ -1662,13 +1664,13 @@ watch(conversationId, async (newId, oldId) => {
 
 /* ========== 列表 ========== */
 .markdown-content :deep(.md-list) {
-  margin: 0.8em 0;
-  padding-left: 2em;
+  margin: 0.05em 0;
+  padding-left: 1.2em;
 }
 
 .markdown-content :deep(.list-item) {
-  margin: 0.4em 0;
-  line-height: 1.6;
+  margin: 0.02em 0;
+  line-height: 1.4;
 }
 
 .markdown-content :deep(ul.md-list) {
@@ -1721,10 +1723,10 @@ watch(conversationId, async (newId, oldId) => {
 .markdown-content :deep(.md-code-block) {
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
   color: #e2e8f0;
-  padding: 1em;
-  border-radius: 8px;
+  padding: 0.6em;
+  border-radius: 6px;
   overflow-x: auto;
-  margin: 1em 0;
+  margin: 0.15em 0;
   font-size: 14px;
   line-height: 1.5;
   border: 1px solid #334155;
@@ -1764,12 +1766,12 @@ watch(conversationId, async (newId, oldId) => {
 .markdown-content :deep(.math-block) {
   background: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%);
   border: 1px solid #fde047;
-  border-radius: 8px;
-  padding: 1.5em;
-  margin: 1.5em 0;
+  border-radius: 6px;
+  padding: 0.6em;
+  margin: 0.15em 0;
   text-align: center;
   font-family: 'Times New Roman', serif;
-  font-size: 1.1em;
+  font-size: 1.05em;
   overflow-x: auto;
   box-shadow: 0 2px 4px rgba(253, 224, 71, 0.1);
 }
@@ -1777,8 +1779,8 @@ watch(conversationId, async (newId, oldId) => {
 .markdown-content :deep(.math-inline) {
   background: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%);
   border: 1px solid #fde047;
-  border-radius: 4px;
-  padding: 0.2em 0.5em;
+  border-radius: 3px;
+  padding: 0.15em 0.4em;
   font-family: 'Times New Roman', serif;
   font-style: italic;
   display: inline-block;
@@ -1787,9 +1789,9 @@ watch(conversationId, async (newId, oldId) => {
 
 /* ========== 引用块 ========== */
 .markdown-content :deep(blockquote) {
-  border-left: 4px solid #8b5cf6;
-  padding: 0.8em 1em;
-  margin: 1em 0;
+  border-left: 3px solid #8b5cf6;
+  padding: 0.3em 0.6em;
+  margin: 0.1em 0;
   color: #52525b;
   background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
   border-radius: 0 8px 8px 0;
@@ -1848,9 +1850,9 @@ watch(conversationId, async (newId, oldId) => {
 
 /* ========== 表格 ========== */
 .markdown-content :deep(.md-table-wrapper) {
-  margin: 1.5em 0;
+  margin: 0.15em 0;
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: 6px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
@@ -1921,9 +1923,9 @@ watch(conversationId, async (newId, oldId) => {
 /* ========== 分隔线 ========== */
 .markdown-content :deep(.md-hr) {
   border: none;
-  height: 2px;
+  height: 1px;
   background: linear-gradient(90deg, transparent 0%, #cbd5e1 50%, transparent 100%);
-  margin: 2em 0;
+  margin: 0.3em 0;
 }
 
 .markdown-content :deep(hr) {

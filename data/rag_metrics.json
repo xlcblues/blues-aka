@@ -1,7 +1,7 @@
 {
-  "total_queries": 10,
-  "total_retrievals": 38,
-  "total_tokens_used": 16674,
+  "total_queries": 11,
+  "total_retrievals": 43,
+  "total_tokens_used": 19133,
   "avg_precision": 0.0,
   "avg_recall": 0.0,
   "avg_feedback": 0.0,
@@ -12,11 +12,11 @@
       "tokens": 6888
     },
     "2026-03-25": {
-      "queries": 4,
-      "retrievals": 20,
-      "tokens": 9786
+      "queries": 5,
+      "retrievals": 25,
+      "tokens": 12245
     }
   },
   "created_at": "2026-03-24T20:20:19.649532",
-  "updated_at": "2026-03-25T17:51:01.144772"
+  "updated_at": "2026-03-25T18:03:56.294922"
 }
