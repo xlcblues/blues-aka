@@ -51,6 +51,11 @@
               <el-icon><FolderOpened /></el-icon>
               <span>RAG索引管理</span>
             </el-menu-item>
+
+            <el-menu-item index="/scheduled-tasks" v-if="isAdmin">
+              <el-icon><Timer /></el-icon>
+              <span>定时任务管理</span>
+            </el-menu-item>
           </el-menu>
         </div>
       </transition>
@@ -101,6 +106,12 @@
           <el-icon><FolderOpened /></el-icon>
           <span>RAG索引管理</span>
         </el-menu-item>
+
+        <!-- 只有管理员才能看到定时任务管理 -->
+        <el-menu-item index="/scheduled-tasks" v-if="isAdmin">
+          <el-icon><Timer /></el-icon>
+          <span>定时任务管理</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
   </div>
@@ -110,7 +121,7 @@
 import { ref, computed, getCurrentInstance } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { Fold, Expand, Avatar, ChatDotRound, UserFilled, DataAnalysis, FolderOpened } from '@element-plus/icons-vue'
+import { Fold, Expand, Avatar, ChatDotRound, UserFilled, DataAnalysis, FolderOpened, Timer } from '@element-plus/icons-vue'
 
 export default {
   name: 'Sidebar',
@@ -121,7 +132,8 @@ export default {
     ChatDotRound,
     UserFilled,
     DataAnalysis,
-    FolderOpened
+    FolderOpened,
+    Timer
   },
   emits: ['collapse-change'],
   setup() {

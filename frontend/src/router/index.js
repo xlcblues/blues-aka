@@ -10,6 +10,7 @@ import ConversationList from '../views/ConversationList.vue'
 import Chat from '../views/Chat.vue'
 import RAGMetrics from '../views/RAGMetrics.vue'
 import RAGIndexManagement from '../views/RAGIndexManagement.vue'
+import ScheduledTasks from '../views/ScheduledTasks.vue'
 
 const routes = [
   {
@@ -44,6 +45,12 @@ const routes = [
     path: '/rag-index',
     name: 'RAGIndexManagement',
     component: RAGIndexManagement,
+    meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  {
+    path: '/scheduled-tasks',
+    name: 'ScheduledTasks',
+    component: ScheduledTasks,
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   {
