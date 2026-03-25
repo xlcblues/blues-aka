@@ -4,6 +4,7 @@
  * 提供RAG索引管理的接口调用方法
  */
 import axios from 'axios'
+import { useAuthStore } from '../stores/auth'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
@@ -68,14 +69,9 @@ api.interceptors.response.use(
         console.error('Token refresh failed:', refreshError)
 
         // 刷新失败，清除所有认证状态并跳转登录
-        localStorage.removeItem('isLoggedIn')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('username')
-        localStorage.removeItem('is_admin')
-        localStorage.removeItem('user_id')
+        const authStore = useAuthStore()
+        authStore.clearAuth()
 
-        window.location.replace('/login')
         return Promise.reject(refreshError)
       }
     }

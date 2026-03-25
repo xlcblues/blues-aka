@@ -52,11 +52,10 @@ api.interceptors.response.use(
         console.error('Token refresh failed:', refreshError)
 
         // 刷新失败，清除认证状态并跳转登录
-        localStorage.removeItem('isLoggedIn')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('username')
-        window.location.href = '/login'
+        import('../stores/auth').then(({ useAuthStore }) => {
+          const authStore = useAuthStore()
+          authStore.clearAuth()
+        })
 
         return Promise.reject(refreshError)
       }

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useAuthStore } from '../stores/auth'
 
 // 创建 axios 实例（使用与 agent.js 相同的配置）
 const api = axios.create({
@@ -28,13 +29,10 @@ api.interceptors.response.use(
   error => {
     console.error('Knowledge Base API Error:', error)
 
-    // 如果收到401响应，清除认证状态
+    // 如果收到401响应，清除认证状态并跳转登录
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('isLoggedIn')
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      localStorage.removeItem('username')
-      window.location.href = '/login'
+      const authStore = useAuthStore()
+      authStore.clearAuth()
     }
 
     // 提取后端返回的错误信息

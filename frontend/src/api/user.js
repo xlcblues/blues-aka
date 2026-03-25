@@ -94,15 +94,11 @@ api.interceptors.response.use(
         console.error('Token refresh failed:', refreshError)
 
         // 刷新失败，清除所有认证状态并跳转登录
-        localStorage.removeItem('isLoggedIn')
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        localStorage.removeItem('username')
-        localStorage.removeItem('is_admin')
-        localStorage.removeItem('user_id')
-
-        // 使用replace而不是href，避免用户按返回键回到之前的页面
-        window.location.replace('/login')
+        // 导入useAuthStore需要延迟导入以避免循环依赖
+        import('../stores/auth').then(({ useAuthStore }) => {
+          const authStore = useAuthStore()
+          authStore.clearAuth()
+        })
 
         return Promise.reject(refreshError)
       }

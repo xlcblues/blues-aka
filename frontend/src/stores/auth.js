@@ -121,6 +121,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('isLoggedIn')
     localStorage.removeItem('is_admin')
     localStorage.removeItem('user_id')
+
+    // 跳转到登录页（使用window.location.replace避免路由守卫拦截）
+    if (window.location.pathname !== '/login') {
+      window.location.replace('/login')
+    }
   }
 
   const refreshAccessToken = async () => {
