@@ -41,6 +41,16 @@
               <el-icon><UserFilled /></el-icon>
               <span>用户管理</span>
             </el-menu-item>
+
+            <el-menu-item index="/rag-metrics" v-if="isAdmin">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>RAG性能指标</span>
+            </el-menu-item>
+
+            <el-menu-item index="/rag-index" v-if="isAdmin">
+              <el-icon><FolderOpened /></el-icon>
+              <span>RAG索引管理</span>
+            </el-menu-item>
           </el-menu>
         </div>
       </transition>
@@ -79,6 +89,18 @@
           <el-icon><UserFilled /></el-icon>
           <span>用户管理</span>
         </el-menu-item>
+
+        <!-- 只有管理员才能看到RAG性能指标 -->
+        <el-menu-item index="/rag-metrics" v-if="isAdmin">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>RAG性能指标</span>
+        </el-menu-item>
+
+        <!-- 只有管理员才能看到RAG索引管理 -->
+        <el-menu-item index="/rag-index" v-if="isAdmin">
+          <el-icon><FolderOpened /></el-icon>
+          <span>RAG索引管理</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
   </div>
@@ -88,7 +110,7 @@
 import { ref, computed, getCurrentInstance } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { Fold, Expand, Avatar, ChatDotRound, UserFilled } from '@element-plus/icons-vue'
+import { Fold, Expand, Avatar, ChatDotRound, UserFilled, DataAnalysis, FolderOpened } from '@element-plus/icons-vue'
 
 export default {
   name: 'Sidebar',
@@ -97,7 +119,9 @@ export default {
     Expand,
     Avatar,
     ChatDotRound,
-    UserFilled
+    UserFilled,
+    DataAnalysis,
+    FolderOpened
   },
   emits: ['collapse-change'],
   setup() {

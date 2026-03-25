@@ -1670,7 +1670,7 @@ def submit_rag_feedback():
         }
     """
     from blues_aka.rag.evaluator import get_rag_evaluator
-    from blues_aka.Agent.models.user import User
+    from blues_aka.user.models.user import User
     
     data = request.get_json()
     
@@ -1719,19 +1719,19 @@ def submit_rag_feedback():
 def get_rag_metrics():
     """获取 RAG 性能指标（管理员）"""
     from blues_aka.rag.evaluator import get_rag_evaluator, get_rag_metrics_tracker
-    from blues_aka.Agent.models.user import User
-    
+    from blues_aka.user.models.user import User
+
     # 获取当前用户
     user_id = get_jwt_identity()
     current_user = User.query.get(user_id)
-    
+
     # 检查权限（只有管理员可以查看）
     if not current_user.is_admin:
         raise Exceptions.Auth.forbidden('只有管理员可以查看 RAG 指标')
-    
+
     # 获取查询参数
     return_summary = request.args.get('summary', 'true').lower() == 'true'
-    
+
     result = {}
     
     # 获取评估摘要
@@ -1754,7 +1754,7 @@ def get_rag_metrics():
 def export_rag_evaluations():
     """导出 RAG 评估数据（管理员）"""
     from blues_aka.rag.evaluator import get_rag_evaluator
-    from blues_aka.Agent.models.user import User
+    from blues_aka.user.models.user import User
     
     # 获取当前用户
     user_id = get_jwt_identity()

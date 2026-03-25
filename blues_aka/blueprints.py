@@ -1,5 +1,5 @@
 from .user.routes import user_bp, auth_bp
-from .Agent.routes import agent_bp, conversation_bp, chat_bp
+from .Agent.routes import agent_bp, conversation_bp, chat_bp, rag_index_bp
 from blues_aka.tasks.routes import tasks_bp
 
 # 注册蓝图
@@ -9,4 +9,5 @@ def init_blueprints(app):
     app.register_blueprint(agent_bp)
     app.register_blueprint(conversation_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(rag_index_bp)
     app.register_blueprint(tasks_bp)

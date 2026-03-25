@@ -105,6 +105,26 @@
                 <el-icon><Star /></el-icon>
                 {{ message.rating }}⭐
               </el-button>
+              <!-- RAG反馈按钮 -->
+              <el-dropdown trigger="click" v-if="isRAGEnabled && !message.ragFeedback">
+                <el-button text size="small" class="rag-feedback-btn">
+                  <el-icon><Management /></el-icon>
+                  RAG反馈
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="submitRAGFeedback(message, 5)">👍 非常满意</el-dropdown-item>
+                    <el-dropdown-item @click="submitRAGFeedback(message, 4)">🙂 满意</el-dropdown-item>
+                    <el-dropdown-item @click="submitRAGFeedback(message, 3)">😐 一般</el-dropdown-item>
+                    <el-dropdown-item @click="submitRAGFeedback(message, 2)">🙁 不满意</el-dropdown-item>
+                    <el-dropdown-item @click="submitRAGFeedback(message, 1)">👎 非常不满意</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button text size="small" v-else-if="isRAGEnabled && message.ragFeedback" disabled class="rag-rated-btn">
+                <el-icon><Management /></el-icon>
+                已反馈 {{ message.ragFeedback }}⭐
+              </el-button>
             </div>
           </div>
         </div>
@@ -345,6 +365,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Reading, Management, Check, Loading, CircleClose, Search, InfoFilled, MagicStick, Timer } from '@element-plus/icons-vue'
 import { chatApi, conversationApi, agentApi } from '../api/agent'
 import { knowledgeBaseApi } from '../api/knowledgeBase'
+import { ragApi } from '../api/rag'
 import { renderMarkdown } from '../utils/markdown'
 import { formatTime } from '../utils/time'
 import { throttle } from 'lodash-es'
@@ -403,6 +424,14 @@ const newChatRules = {
 
 // 用户信息
 const username = computed(() => localStorage.getItem('username'))
+
+// 计算属性：判断是否启用RAG
+const isRAGEnabled = computed(() => {
+  // RAG配置可能在conversation根级别或agent对象中
+  const enableRag = conversation.value?.enable_rag || conversation.value?.agent?.enable_rag
+  const ragIndexName = conversation.value?.rag_index_name || conversation.value?.agent?.rag_index_name
+  return enableRag && ragIndexName
+})
 
 // 引用
 const messagesContainer = ref(null)
@@ -945,6 +974,44 @@ const rateMessage = async (message, rating) => {
   }
 }
 
+// 提交RAG反馈
+const submitRAGFeedback = async (message, feedback) => {
+  try {
+    // 获取用户查询（从上一条用户消息中获取）
+    const messageIndex = messages.value.findIndex(m => m.id === message.id)
+    let userQuery = ''
+    if (messageIndex > 0) {
+      const prevMessage = messages.value[messageIndex - 1]
+      if (prevMessage.role === 'user') {
+        userQuery = prevMessage.content
+      }
+    }
+
+    const response = await ragApi.submitFeedback({
+      query: userQuery,
+      answer: message.content,
+      feedback: feedback,
+      conversation_id: conversationId.value,
+      message_id: message.id
+    })
+
+    if (response.code === 200 || response.success) {
+      ElMessage.success('RAG反馈已记录，感谢您的反馈！')
+
+      // 更新消息的RAG反馈状态
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].ragFeedback = feedback
+      }
+    } else {
+      ElMessage.error(response.message || '反馈提交失败')
+    }
+  } catch (error) {
+    console.error('RAG反馈失败:', error)
+    const errorMessage = error.backendMessage || error.message || '反馈提交失败，请稍后重试'
+    ElMessage.error(errorMessage)
+  }
+}
+
 // 导出对话
 const exportChat = () => {
   const content = messages.value
@@ -1357,6 +1424,22 @@ watch(conversationId, async (newId, oldId) => {
 .rated-btn {
   color: #f59e0b !important;
   font-weight: 400;
+}
+
+/* RAG反馈按钮样式 */
+.rag-feedback-btn {
+  color: #8b5cf6 !important;
+  font-weight: 500;
+}
+
+.rag-feedback-btn:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
+  color: #ffffff !important;
+}
+
+.rag-rated-btn {
+  color: #8b5cf6 !important;
+  font-weight: 500;
 }
 
 /* 推理过程样式 */

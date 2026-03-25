@@ -4,6 +4,10 @@
     <div class="page-header">
       <h1 class="page-title">🐱‍👤 用户管理</h1>
       <div class="header-actions">
+        <el-button type="primary" @click="goToRAGMetrics" v-if="isAdmin">
+          <el-icon><Management /></el-icon>
+          RAG性能指标
+        </el-button>
         <el-button type="success" @click="handleCreate" class="create-btn">
           <el-icon><Plus /></el-icon>
           新增用户
@@ -245,6 +249,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Management } from '@element-plus/icons-vue'
 import { userApi } from '../api/user'
 import { useAuthStore } from '../stores/auth'
 
@@ -252,6 +257,7 @@ export default {
   name: 'UserList',
   setup() {
     const router = useRouter()
+    const authStore = useAuthStore()
 
     // 响应式数据
     const loading = ref(false)
@@ -313,6 +319,16 @@ export default {
     const dialogTitle = computed(() => {
       return isEdit.value ? '编辑用户' : '新增用户'
     })
+
+    // 判断是否为管理员
+    const isAdmin = computed(() => {
+      return authStore.user?.is_admin || false
+    })
+
+    // 跳转到RAG指标页面
+    const goToRAGMetrics = () => {
+      router.push('/rag-metrics')
+    }
 
     // 获取用户列表
     const fetchUsers = async () => {
@@ -1031,6 +1047,9 @@ export default {
       userFormRules,
       dialogTitle,
 
+      // 计算属性
+      isAdmin,
+
       // 方法
       fetchUsers,
       handleSearch,
@@ -1049,7 +1068,8 @@ export default {
       getStatusIcon,
       formatDateTime,
       getEmptyText,
-      getRowClassName
+      getRowClassName,
+      goToRAGMetrics
     }
   }
 }
