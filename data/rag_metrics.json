@@ -1,0 +1,22 @@
+{
+  "total_queries": 7,
+  "total_retrievals": 23,
+  "total_tokens_used": 9347,
+  "avg_precision": 0.0,
+  "avg_recall": 0.0,
+  "avg_feedback": 0.0,
+  "daily_stats": {
+    "2026-03-24": {
+      "queries": 6,
+      "retrievals": 18,
+      "tokens": 6888
+    },
+    "2026-03-25": {
+      "queries": 1,
+      "retrievals": 5,
+      "tokens": 2459
+    }
+  },
+  "created_at": "2026-03-24T20:20:19.649532",
+  "updated_at": "2026-03-25T11:28:04.823654"
+}
